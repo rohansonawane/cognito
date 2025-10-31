@@ -217,7 +217,9 @@ export default function App() {
 
       <footer className="app-footer">
         <div className="footer-inner">
-          <span>Made with ♥ · Cognito</span>
+          <span>
+            Made with <span className="heart-anim">♥</span> · <span className="brand-gradient">Cognito</span>
+          </span>
           <div className="footer-links">
             <a href="#" id="link-about" onClick={(e) => { e.preventDefault(); setShowAbout(true); }}>About</a>
             <a href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer" id="link-feedback">Feedback</a>

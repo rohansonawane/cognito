@@ -192,6 +192,8 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
 .footer-links { display:flex; align-items:center; gap: 14px; }
 .footer-links a { padding: 6px 10px; border-radius: 8px; color: var(--color-text-secondary); border: 1px solid transparent; }
 .footer-links a:hover { color: var(--color-text); border-color: var(--color-border); background: var(--color-surface); }
+.heart-anim { color: #ef4444; display:inline-block; animation: heartbeat 1.2s ease-in-out infinite; transform-origin: center; }
+.brand-gradient { background: linear-gradient(90deg, var(--color-primary), #67e8f9); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 700; }
 .tools .tool-group + .tool-group { border-top: 1px solid var(--color-border); padding-top: 0.75rem; margin-top: 0.75rem; }
 
 .bottom-decor { height: 220px; width: 100%; pointer-events: none; background-repeat: no-repeat; background-position: bottom center; background-size: cover; }
@@ -246,6 +248,7 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
 @keyframes borderSweep { 0% { background-position: 0% 0; } 100% { background-position: 300% 0; } }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @keyframes askPulse { 0% { opacity: 0; transform: scale(.9); } 40% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.2); } }
+@keyframes heartbeat { 0% { transform: scale(1); } 15% { transform: scale(1.15); } 30% { transform: scale(1); } 45% { transform: scale(1.1); } 60%, 100% { transform: scale(1); } }
 
 /* About chat-like modal */
 .about-modal { position: fixed; right: 16px; bottom: 80px; width: min(420px, 92vw); max-height: 70vh; background: var(--color-surface); border:1px solid var(--color-border); border-radius: 14px; box-shadow: var(--shadow-strong); display:flex; flex-direction: column; overflow: hidden; animation: floatIn var(--motion-normal) var(--ease-standard) both; z-index: 20; }
