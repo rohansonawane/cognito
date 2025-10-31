@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Logs
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+build/
+dist/
+**/dist/
+.tmp/
+.temp/
+.cache/
+**/.vite/
+
+# Coverage
+coverage/
+
+# OS / Editors
+.DS_Store
+.AppleDouble
+.LSOverride
+.vscode/
+.idea/
+
+# Env / Secrets
+.env
+.env.*
+server/.env
+
+# Framework/Tooling
+.netlify/
+.vercel/
+
+# Expo / React Native
+native/.expo/
+native/ios/
+native/android/
+*.keystore
+
+# Misc
+Thumbs.db
+*.swp

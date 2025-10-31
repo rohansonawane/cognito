@@ -1,0 +1,122 @@
+{
+  "style": {
+    "theme": {
+      "mode": "dark",
+      "colors": {
+        "background": "#1E1E1E",
+        "surface": "#2A2A2A",
+        "primary": "#00F0C8",
+        "textPrimary": "#FFFFFF",
+        "textSecondary": "#B0B0B0",
+        "border": "#333333",
+        "highlight": "#00C2A8"
+      },
+      "fonts": {
+        "family": "Inter, sans-serif",
+        "weight": {
+          "regular": 400,
+          "medium": 500,
+          "bold": 600
+        }
+      },
+      "radius": {
+        "sm": "8px",
+        "md": "16px",
+        "lg": "24px"
+      },
+      "shadow": {
+        "soft": "0 4px 12px rgba(0,0,0,0.2)",
+        "strong": "0 6px 20px rgba(0,0,0,0.3)"
+      }
+    },
+    "layout": {
+      "grid": {
+        "columns": 12,
+        "gap": "1rem",
+        "maxWidth": "1280px",
+        "margin": "0 auto"
+      },
+      "breakpoints": {
+        "mobile": "480px",
+        "tablet": "768px",
+        "desktop": "1024px",
+        "large": "1440px"
+      },
+      "responsive": {
+        "toolbar": {
+          "width": {
+            "mobile": "100%",
+            "tablet": "80px",
+            "desktop": "100px"
+          },
+          "position": {
+            "mobile": "bottom",
+            "tablet": "left",
+            "desktop": "left"
+          }
+        },
+        "canvas": {
+          "flex": 1,
+          "minHeight": {
+            "mobile": "60vh",
+            "tablet": "70vh",
+            "desktop": "80vh"
+          },
+          "background": "#111111",
+          "borderRadius": "16px"
+        },
+        "sidePanel": {
+          "width": {
+            "mobile": "100%",
+            "tablet": "280px",
+            "desktop": "320px"
+          },
+          "background": "#2A2A2A",
+          "padding": "1rem",
+          "borderRadius": "16px"
+        },
+        "button": {
+          "padding": {
+            "mobile": "10px 14px",
+            "desktop": "12px 20px"
+          },
+          "fontSize": {
+            "mobile": "0.9rem",
+            "desktop": "1rem"
+          },
+          "borderRadius": "12px",
+          "hoverEffect": {
+            "background": "#00C2A8",
+            "textColor": "#000000"
+          }
+        }
+      }
+    },
+    "transitions": {
+      "duration": "0.3s",
+      "easing": "ease-in-out"
+    },
+    "components": {
+      "card": {
+        "background": "#2A2A2A",
+        "padding": "1.25rem",
+        "borderRadius": "16px",
+        "boxShadow": "0 4px 10px rgba(0,0,0,0.2)",
+        "hover": {
+          "transform": "scale(1.02)",
+          "boxShadow": "0 6px 16px rgba(0,0,0,0.3)"
+        }
+      },
+      "input": {
+        "background": "#333333",
+        "color": "#FFFFFF",
+        "borderRadius": "8px",
+        "padding": "0.75rem 1rem",
+        "border": "1px solid #444444",
+        "focus": {
+          "border": "1px solid #00F0C8"
+        }
+      }
+    }
+  }
+}

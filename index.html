@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Canvas Lab</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <meta name="description" content="Draw on a modern canvas with brushes, colors, eraser, save boards, and AI analysis." />
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-mark">✎</div>
+          <div class="brand-text">
+            <h1>AI Canvas Lab</h1>
+            <p>Sketch, solve, and save with AI</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button id="btn-save-board" class="btn primary" title="Save Board">Save</button>
+          <button id="btn-download" class="btn" title="Download PNG">Download</button>
+          <button id="btn-analyze" class="btn accent" title="Send to AI">Ask AI</button>
+        </div>
+      </header>
+
+      <main class="app-main">
+        <!-- Tools: responsive bottom (mobile) or left rail (tablet/desktop) -->
+        <aside class="tools" id="tools">
+          <div class="tool-group">
+            <label class="tool-label">Brush</label>
+            <div class="segmented" role="tablist">
+              <button class="segmented-item active" data-tool="brush" title="Brush">Brush</button>
+              <button class="segmented-item" data-tool="marker" title="Marker">Marker</button>
+              <button class="segmented-item" data-tool="highlighter" title="Highlighter">Highlight</button>
+              <button class="segmented-item" data-tool="eraser" title="Eraser">Eraser</button>
+            </div>
+          </div>
+
+          <div class="tool-group">
+            <label class="tool-label">Color</label>
+            <div class="color-row" id="color-swatches"></div>
+            <div class="color-custom">
+              <input type="color" id="color-picker" aria-label="Custom color" />
+            </div>
+          </div>
+
+          <div class="tool-group">
+            <label class="tool-label">Size <span id="size-value">8</span>px</label>
+            <input type="range" id="size-range" min="1" max="64" value="8" />
+          </div>
+
+          <div class="tool-group">
+            <label class="tool-label">Actions</label>
+            <div class="action-row">
+              <button id="btn-undo" class="btn" title="Undo">Undo</button>
+              <button id="btn-redo" class="btn" title="Redo">Redo</button>
+              <button id="btn-clear" class="btn danger" title="Clear Canvas">Clear</button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Canvas -->
+        <section class="canvas-wrap">
+          <canvas id="board" class="board" aria-label="Drawing canvas"></canvas>
+        </section>
+
+        <!-- Side Panel: AI output + Boards -->
+        <aside class="side-panel">
+          <div class="card" id="ai-card">
+            <div class="card-header">
+              <h2>AI Response</h2>
+              <button id="btn-copy-ai" class="icon-btn" title="Copy"><span>⧉</span></button>
+            </div>
+            <div id="ai-output" class="ai-output" aria-live="polite">Draw something and press "Ask AI".</div>
+          </div>
+
+          <div class="card" id="boards-card">
+            <div class="card-header">
+              <h2>Saved Boards</h2>
+              <button id="btn-new-board" class="icon-btn" title="New Board"><span>＋</span></button>
+            </div>
+            <div id="boards-list" class="boards-list"></div>
+          </div>
+        </aside>
+      </main>
+
+      <footer class="app-footer">
+        <span>Powered by AI · Theme: dark</span>
+        <a href="#" id="link-help">Help</a>
+      </footer>
+    </div>
+
+    <script>
+      window.APP_CONFIG = {
+        aiEndpoint: "",
+        aiApiKey: "",
+      };
+    </script>
+    <script type="module" src="./app.js"></script>
+  </body>
+  </html>
+
+

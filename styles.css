@@ -1,0 +1,357 @@
+:root {
+  /* Theme from design.json */
+  --color-bg: #1e1e1e;
+  --color-surface: #2a2a2a;
+  --color-canvas: #111111;
+  --color-primary: #00f0c8;
+  --color-accent: #00c2a8;
+  --color-text: #ffffff;
+  --color-text-secondary: #b0b0b0;
+  --color-border: #333333;
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-strong: 0 6px 20px rgba(0, 0, 0, 0.3);
+
+  --grid-gap: 1rem;
+  --layout-max: 1280px;
+
+  --bp-mobile: 480px;
+  --bp-tablet: 768px;
+  --bp-desktop: 1024px;
+  --bp-large: 1440px;
+
+  --transition: 0.3s ease-in-out;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: Inter, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem; /* mobile */
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  background: linear-gradient(180deg, rgba(42,42,42,0.9), rgba(42,42,42,0.7));
+  backdrop-filter: blur(6px);
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand-mark {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-soft);
+}
+
+.brand-text h1 {
+  margin: 0;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.brand-text p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  padding: 10px 14px; /* mobile */
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform var(--transition), background var(--transition), color var(--transition), box-shadow var(--transition);
+}
+
+.btn:hover {
+  background: var(--color-accent);
+  color: #000;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.btn.primary {
+  border-color: transparent;
+  background: var(--color-primary);
+  color: #000;
+}
+
+.btn.accent {
+  border-color: var(--color-accent);
+}
+
+.btn.danger {
+  border-color: #552222;
+  background: #3a2121;
+}
+
+.icon-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  color: var(--color-text);
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.app-main {
+  display: grid;
+  grid-template-columns: 1fr; /* mobile */
+  gap: var(--grid-gap);
+  padding: 1rem;
+  max-width: var(--layout-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.tools {
+  position: sticky;
+  bottom: 0; /* mobile: bottom toolbar */
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  z-index: 5;
+}
+
+.tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tool-label {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: #202020;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.segmented-item {
+  background: transparent;
+  color: var(--color-text);
+  border: 0;
+  padding: 10px 8px;
+  cursor: pointer;
+}
+
+.segmented-item.active {
+  background: var(--color-primary);
+  color: #000;
+}
+
+.color-row {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+}
+
+.color-custom input[type="color"] {
+  width: 100%;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  background: #222;
+  border-radius: 10px;
+}
+
+input[type="range"] {
+  width: 100%;
+}
+
+.action-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.canvas-wrap {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-height: 60vh; /* mobile */
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.board {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-md);
+}
+
+.side-panel {
+  display: grid;
+  gap: var(--grid-gap);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.ai-output {
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.boards-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.board-card {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #202020;
+}
+
+.board-thumb {
+  width: 100%;
+  aspect-ratio: 4/3;
+  object-fit: cover;
+  display: block;
+}
+
+.board-meta {
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.meta-title {
+  font-size: 0.9rem;
+}
+
+.meta-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.app-footer {
+  margin-top: auto;
+  padding: 0.75rem 1rem;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Tablet */
+@media (min-width: 768px) {
+  .app-header {
+    padding: 1rem 1.25rem;
+  }
+  .app-main {
+    grid-template-columns: 100px 1fr 280px; /* toolbar, canvas, side */
+  }
+  .tools {
+    position: sticky;
+    top: 84px; /* below header */
+    align-self: start;
+    height: fit-content;
+    grid-template-columns: 1fr;
+  }
+  .canvas-wrap {
+    min-height: 70vh;
+  }
+}
+
+/* Desktop */
+@media (min-width: 1024px) {
+  .app-main {
+    grid-template-columns: 100px 1fr 320px;
+  }
+  .canvas-wrap {
+    min-height: 80vh;
+  }
+  .btn {
+    padding: 12px 20px; /* desktop */
+  }
+}
+
+
