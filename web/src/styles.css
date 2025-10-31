@@ -64,7 +64,7 @@ body {
 .brand-mark img { display:block; height:100%; width:auto; max-width: 160px; }
 .header-actions { display:flex; align-items:center; gap:0.75rem; }
 /* Compact header controls */
-.header-inner .btn { height:36px; padding:4px 8px; }
+.header-inner .btn { height:36px; padding:4px 8px; font-size: 12px; }
 /* Fix dropdown arrow spacing */
 select.btn { height:36px; padding:6px 10px; border-radius:12px; appearance: none; -webkit-appearance: none; -moz-appearance: none; min-width: 120px; }
 select.btn { padding-right: 28px; }
