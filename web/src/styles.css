@@ -74,6 +74,20 @@ select.btn:focus { outline: none; }
 .btn:active { transform: translateY(0); }
 .btn.primary { border-color:transparent; background:var(--color-primary); color:#000; }
 .btn.accent { border-color:var(--color-accent); }
+.btn.liquid { position: relative; overflow: hidden; }
+.btn.liquid::after {
+  content: "";
+  position: absolute;
+  width: 180%;
+  height: 200%;
+  left: -40%;
+  top: -60%;
+  background: radial-gradient(35% 35% at 50% 50%, rgba(14,165,233,.35), rgba(14,165,233,0) 60%), radial-gradient(25% 25% at 60% 40%, rgba(59,130,246,.25), rgba(59,130,246,0) 60%);
+  filter: blur(12px);
+  transform: translate3d(0,0,0);
+  animation: liquidMove 6s ease-in-out infinite;
+  pointer-events: none;
+}
 .btn.feedback { position: relative; overflow: hidden; background: transparent; color: var(--color-text); border-color: transparent; text-decoration: none; }
 .btn.feedback::before {
   content: "";
@@ -180,6 +194,12 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
 .bottom-decor { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320' preserveAspectRatio='none'><defs><linearGradient id='g1' x1='0' y1='0' x2='0' y2='1'><stop offset='0%' stop-color='%230b0f13'/><stop offset='100%' stop-color='%2312171c'/></linearGradient><linearGradient id='g2' x1='0' y1='0' x2='0' y2='1'><stop offset='0%' stop-color='%230e2a3a'/><stop offset='100%' stop-color='%230b1e2b'/></linearGradient></defs><rect width='1440' height='320' fill='transparent'/><path fill='url(%23g1)' d='M0,250 L120,230 L240,250 L360,200 L480,230 L600,180 L720,220 L840,195 L960,220 L1080,170 L1200,205 L1320,190 L1440,205 L1440,320 L0,320 Z'/><path fill='url(%23g2)' opacity='0.8' d='M0,260 L160,240 L300,260 L420,210 L560,235 L700,200 L840,230 L980,210 L1120,230 L1260,200 L1440,215 L1440,320 L0,320 Z'/></svg>"); }
 /* Light theme mountain SVG */
 [data-theme="light"] .bottom-decor { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320' preserveAspectRatio='none'><defs><linearGradient id='g1' x1='0' y1='0' x2='0' y2='1'><stop offset='0%' stop-color='%23f7f8fa'/><stop offset='100%' stop-color='%23ffffff'/></linearGradient><linearGradient id='g2' x1='0' y1='0' x2='0' y2='1'><stop offset='0%' stop-color='%23cdeefd'/><stop offset='100%' stop-color='%23b9e6fb'/></linearGradient></defs><rect width='1440' height='320' fill='transparent'/><path fill='url(%23g1)' d='M0,250 L120,230 L240,250 L360,200 L480,230 L600,180 L720,220 L840,195 L960,220 L1080,170 L1200,205 L1320,190 L1440,205 L1440,320 L0,320 Z'/><path fill='url(%23g2)' opacity='0.9' d='M0,260 L160,240 L300,260 L420,210 L560,235 L700,200 L840,230 L980,210 L1120,230 L1260,200 L1440,215 L1440,320 L0,320 Z'/></svg>"); }
+
+/* Animated beams/paths background */
+/* removed animated paths background */
+
+@keyframes liquidMove { 0% { transform: translate(-10%, -5%) rotate(0deg); } 50% { transform: translate(10%, 5%) rotate(180deg); } 100% { transform: translate(-10%, -5%) rotate(360deg); } }
+/* beamsRotate removed */
 
 @media (min-width: 768px) {
   .app-header { padding: 10px 0; }

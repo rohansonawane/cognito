@@ -21,6 +21,9 @@ export default function App() {
   const [askClicked, setAskClicked] = useState(false);
   const [provider, setProvider] = useState<Provider>('openai');
   const [showAbout, setShowAbout] = useState(false);
+  const [showHow, setShowHow] = useState(false);
+  const howWrapRef = React.useRef<HTMLDivElement | null>(null);
+  const [showLimit, setShowLimit] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'light' || saved === 'dark') return saved;
@@ -39,6 +42,14 @@ export default function App() {
   );
 
   async function onAnalyze() {
+    // client-side soft quota: 10 requests / 24h per browser
+    try {
+      const raw = localStorage.getItem('ASK_META');
+      const meta = raw ? JSON.parse(raw) : { count: 0, resetAt: Date.now() + 24*60*60*1000 };
+      if (Date.now() > (meta.resetAt || 0)) { meta.count = 0; meta.resetAt = Date.now() + 24*60*60*1000; }
+      if (meta.count >= 10) { setShowLimit(true); return; }
+      localStorage.setItem('ASK_META', JSON.stringify({ ...meta, count: meta.count + 1 }));
+    } catch {}
     const dataUrl = boardRef.current?.exportPng();
     if (!dataUrl) return;
     setIsAnalyzing(true);
@@ -52,6 +63,7 @@ export default function App() {
       setAiText(res.error || 'Failed to analyze.');
       setIsAnalyzing(false);
       borderTimer.current = window.setTimeout(() => { setAiBorderActive(false); borderTimer.current = null; }, 3000);
+      if ((res.error || '').includes('429')) setShowLimit(true);
       return;
     }
     setAiText(res.message || 'Done.');
@@ -87,14 +99,19 @@ export default function App() {
             <div className="brand-mark"><img src="/src/assets/Logo.png" alt="Cognito logo" /></div>
           </div>
           <div className="header-actions">
+          <div className="btn-popover" ref={howWrapRef}>
+            <button className={`btn liquid`} onClick={() => setShowHow(v=>!v)}>How to use</button>
+            {showHow && null}
+          </div>
           <select className="btn" value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
             <option value="openai">OpenAI</option>
             <option value="gemini">Gemini</option>
           </select>
-          <button className="btn" title="Toggle theme" onClick={() => setTheme((t) => t === 'dark' ? 'light' : 'dark')}>
+          <button className="btn liquid" title="Toggle theme" onClick={() => setTheme((t) => t === 'dark' ? 'light' : 'dark')}>
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
             <span style={{ fontSize: 12 }}>{theme === 'dark' ? 'Light' : 'Dark'}</span>
           </button>
+          <a className="btn feedback" href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer">Feedback</a>
           {/* Ask AI moved to canvas overlay */}
           </div>
         </div>
@@ -185,10 +202,12 @@ export default function App() {
         </aside>
       </main>
 
+      <div className="bottom-decor" aria-hidden="true"></div>
+
       <footer className="app-footer">
         <div className="footer-inner">
           <span>Made with ♥ · Cognito</span>
-          <div className="flex items-center gap-3">
+          <div className="footer-links">
             <a href="#" id="link-about" onClick={(e) => { e.preventDefault(); setShowAbout(true); }}>About</a>
             <a href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer" id="link-feedback">Feedback</a>
           </div>
@@ -208,6 +227,32 @@ export default function App() {
               <li>Undo/redo, save boards locally, download PNG</li>
               <li>Zoom controls top-right; theme toggle in header</li>
             </ul>
+          </div>
+        </div>
+      )}
+
+      {showHow && (
+        <div className="how-overlay" onClick={(e)=>{
+          // Close when clicking outside popover on desktop; stay for mobile fullscreen overlay
+          const target = e.target as HTMLElement;
+          if (target.classList.contains('how-overlay')) setShowHow(false);
+        }} />
+      )}
+
+      {showHow && (
+        <div className="about-modal" role="dialog" aria-modal="true" aria-label="How to use">
+          <div className="about-header">
+            <strong>How to use</strong>
+            <button className="icon-btn" onClick={() => setShowHow(false)} aria-label="Close">✕</button>
+          </div>
+          <div className="about-body">
+            <ol>
+              <li>Pick a tool and color from the left panel. Adjust size with the slider.</li>
+              <li>Draw on the canvas or drag‑drop an image to annotate it.</li>
+              <li>Use zoom controls on the canvas (top‑right). Reset anytime.</li>
+              <li>Optionally type a prompt, then press "Ask AI" (bottom center).</li>
+              <li>Save boards locally or download a PNG when you’re done.</li>
+            </ol>
           </div>
         </div>
       )}
