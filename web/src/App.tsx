@@ -24,6 +24,7 @@ export default function App() {
   const [showHow, setShowHow] = useState(false);
   const howWrapRef = React.useRef<HTMLDivElement | null>(null);
   const [showLimit, setShowLimit] = useState(false);
+  const canvasWrapRef = React.useRef<HTMLDivElement | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'light' || saved === 'dark') return saved;
@@ -168,7 +169,17 @@ export default function App() {
           
         </aside>
 
-        <section className="canvas-wrap">
+        <section
+          className="canvas-wrap"
+          ref={canvasWrapRef}
+          onMouseMove={(e) => {
+            const el = canvasWrapRef.current; if (!el) return;
+            const rect = el.getBoundingClientRect();
+            const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+            el.style.setProperty('--mx', x + 'px');
+            el.style.setProperty('--my', y + 'px');
+          }}
+        >
           <CanvasBoard ref={boardRef} brush={brush} color={color} size={size} />
           <div className="canvas-overlay">
             <div className="overlay-row">
