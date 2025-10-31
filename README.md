@@ -2,8 +2,6 @@
 
 <img src="web/src/assets/Logo.png" alt="Cognito" height="56" />
 
-# Cognito
-
 Sketch. Solve. Describe. A modern, themeable canvas app with AI assistance (OpenAI/Gemini), built for web and mobile.
 
 </div>
@@ -170,6 +168,51 @@ Issues and PRs are welcome. Please open a discussion for significant changes (ar
 ## 📄 License
 
 MIT © Cognito
+
+---
+
+## 🧰 Tech Stack
+
+<div align="center">
+
+<img alt="React" src="https://img.shields.io/badge/React-20232a?style=for-the-badge&logo=react&logoColor=61DAFB"/>
+<img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-3178c6?style=for-the-badge&logo=typescript&logoColor=white"/>
+<img alt="Vite" src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white"/>
+<img alt="Express" src="https://img.shields.io/badge/Express-000000?style=for-the-badge&logo=express&logoColor=white"/>
+<img alt="Node.js" src="https://img.shields.io/badge/Node.js-3c873a?style=for-the-badge&logo=nodedotjs&logoColor=white"/>
+<img alt="OpenAI" src="https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white"/>
+<img alt="Gemini" src="https://img.shields.io/badge/Gemini-1A73E8?style=for-the-badge&logo=google&logoColor=white"/>
+<img alt="CSS" src="https://img.shields.io/badge/CSS-1572B6?style=for-the-badge&logo=css3&logoColor=white"/>
+
+</div>
+
+## 📚 Detailed Usage
+
+- Choose a brush or shape, set color and size. The canvas uses pressure smoothing and an overlay to preview shapes.
+- Drop an image onto the canvas; it lands on the background layer so strokes remain editable above it.
+- Use zoom controls on the canvas (top‑right). Reset view at any time.
+- Enter an optional prompt and press Ask AI (bottom‑center). While analyzing, the response card and button animate.
+- Saved boards are stored locally; download PNG exports for sharing.
+
+## 🔭 Future Scope
+
+- Realtime collaboration: multi‑cursor drawing, presence, cursors, and comments.
+- Layers panel: reordering, visibility, lock, rename; per‑layer export.
+- Rich shapes & text: arrows, polygons, bezier, sticky notes; text styling; emojis.
+- OCR & math: handwriting recognition, LaTeX export, equation parsing.
+- Advanced exports: SVG/PDF, transparent background, tiled poster export.
+- PWA & Offline: installable app, offline boards, background sync.
+- Streaming AI: partial tokens, inline citations/sources, step‑by‑step solutions.
+- Accessibility: keyboard-only tool switching, high‑contrast mode, screen-reader hints.
+
+### 🎓 LMS & Education Integrations
+
+- LTI 1.3 integration to embed Cognito as an assignment/lesson inside LMS (Canvas, Moodle, Blackboard).
+- Classroom mode: teacher view to broadcast a board; student submissions collected as boards.
+- Auto‑grading assists: rubric + AI check for equations and diagrams.
+- Account linking and roster sync, per‑class storage and permissions.
+- Export to LMS gradebook and attach results as PDF/SVG.
+
 
 AI Canvas Lab
 
