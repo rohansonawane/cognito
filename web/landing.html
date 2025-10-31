@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cognito · Sketch. Solve. Describe.</title>
+    <meta name="description" content="Cognito is a modern, themeable canvas app with AI assistance for sketching, math, and annotation." />
+    <link rel="icon" type="image/png" href="/src/assets/Logo.png" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- shadcn/icons via lucide CDN -->
+    <script type="module">
+      import { createIcons, icons } from "https://unpkg.com/lucide@latest/dist/esm/lucide.js";
+      window.addEventListener('DOMContentLoaded', ()=> createIcons({ icons }));
+    </script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              bg: '#0b0f13',
+              surface: '#12171c',
+              border: '#20262d',
+              primary: '#0ea5e9'
+            },
+            keyframes: {
+              glow: {
+                '0%,100%': { boxShadow: '0 0 0 rgba(0,0,0,0)' },
+                '50%': { boxShadow: '0 0 48px rgba(14,165,233,.35)' }
+              },
+              float: {
+                '0%,100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-8px)' }
+              },
+              shimmer: {
+                '0%': { backgroundPosition: '0% 50%' },
+                '100%': { backgroundPosition: '200% 50%' }
+              },
+              bgShift: {
+                '0%': { backgroundPosition: '0% 0%' },
+                '50%': { backgroundPosition: '100% 50%' },
+                '100%': { backgroundPosition: '0% 0%' }
+              }
+            },
+            animation: {
+              glow: 'glow 2.4s ease-in-out infinite',
+              float: 'float 5s ease-in-out infinite',
+              shimmer: 'shimmer 2.2s linear infinite',
+              bgShift: 'bgShift 12s ease-in-out infinite'
+            }
+          }
+        }
+      }
+    </script>
+  </head>
+  <body class="bg-bg text-white selection:bg-primary/30 selection:text-white/90">
+    <!-- Nav -->
+    <header class="sticky top-0 z-20 border-b border-border/70 backdrop-blur bg-surface/70">
+      <div class="max-w-[1280px] mx-auto px-5 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <img src="/src/assets/Logo.png" alt="logo" class="h-8 w-auto"/>
+          <span class="text-sm text-white/60 flex items-center gap-1"><i data-lucide="sparkles" class="w-4 h-4 text-primary animate-pulse"></i> Cognito</span>
+        </div>
+        <nav class="hidden md:flex items-center gap-6 text-sm text-white/70">
+          <a href="#features" class="hover:text-white">Features</a>
+          <a href="#how" class="hover:text-white">How it works</a>
+          <a href="#showcase" class="hover:text-white">Showcase</a>
+          <a href="/" class="px-3 py-1.5 rounded-md border border-border hover:border-primary/70">Open App</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <section class="relative overflow-hidden">
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(800px_400px_at_30%_-10%,rgba(14,165,233,.25),transparent),radial-gradient(600px_300px_at_80%_10%,rgba(59,130,246,.2),transparent)]"></div>
+      <div class="max-w-[1280px] mx-auto px-5 py-16 md:py-24 grid md:grid-cols-2 gap-10 items-center">
+        <div>
+          <h1 class="text-4xl md:text-6xl font-extrabold leading-tight">
+            Sketch. Solve. <span class="bg-gradient-to-r from-primary via-sky-400 to-primary bg-clip-text text-transparent animate-shimmer">Describe.</span>
+          </h1>
+          <p class="text-white/70 mt-4 text-lg">A lightning‑fast canvas with AI that understands diagrams and math. Built for classrooms, teams, and makers.</p>
+          <div class="mt-6 flex items-center gap-3">
+            <a href="/" class="px-5 py-3 rounded-lg bg-primary text-black font-semibold shadow-lg hover:brightness-110 transition animate-glow flex items-center gap-2"><i data-lucide="pen-tool" class="w-5 h-5"></i> Open Web App</a>
+            <a href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener" class="px-4 py-2 rounded-lg border border-border hover:border-primary/70 flex items-center gap-2"><i data-lucide="send" class="w-4 h-4"></i> Join the waitlist</a>
+          </div>
+          <div class="mt-6 text-xs text-white/50">OpenAI • Gemini • React • Express</div>
+        </div>
+        <div class="relative">
+          <img src="/src/assets/screenshots-home.png" alt="App" class="rounded-xl border border-border/70 shadow-xl animate-float"/>
+          <div class="absolute -inset-2 rounded-2xl bg-gradient-to-r from-primary/20 to-sky-500/20 blur-2xl -z-10"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="relative">
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_300px_at_20%_10%,rgba(14,165,233,.15),transparent),radial-gradient(700px_360px_at_80%_30%,rgba(59,130,246,.18),transparent)] animate-bgShift"></div>
+      <div class="relative max-w-[1280px] mx-auto px-5 py-14 grid md:grid-cols-3 gap-8">
+        <div class="relative rounded-2xl p-[2px] bg-gradient-to-r from-primary/70 via-sky-500/70 to-primary/70 animate-shimmer">
+          <div class="rounded-2xl bg-surface p-6 md:p-8 min-h-[180px]">
+            <h3 class="text-xl md:text-2xl font-semibold flex items-center gap-2"><i data-lucide="sparkles" class="w-6 h-6 text-primary animate-pulse"></i> AI‑assisted canvas</h3>
+            <p class="text-white/70 text-base mt-3">Describe drawings, solve equations, and summarize notes — right from the canvas.</p>
+          </div>
+        </div>
+        <div class="relative rounded-2xl p-[2px] bg-gradient-to-r from-primary/70 via-sky-500/70 to-primary/70 animate-shimmer">
+          <div class="rounded-2xl bg-surface p-6 md:p-8 min-h-[180px]">
+            <h3 class="text-xl md:text-2xl font-semibold flex items-center gap-2"><i data-lucide="layers" class="w-6 h-6 text-primary animate-bounce"></i> Layered drawing</h3>
+            <p class="text-white/70 text-base mt-3">Image background + strokes + overlay for clean previews and exports.</p>
+          </div>
+        </div>
+        <div class="relative rounded-2xl p-[2px] bg-gradient-to-r from-primary/70 via-sky-500/70 to-primary/70 animate-shimmer">
+          <div class="rounded-2xl bg-surface p-6 md:p-8 min-h-[180px]">
+            <h3 class="text-xl md:text-2xl font-semibold flex items-center gap-2"><i data-lucide="mouse-pointer-click" class="w-6 h-6 text-primary animate-pulse"></i> Keyboard & touch</h3>
+            <p class="text-white/70 text-base mt-3">Optimized for mouse, pen and trackpad with handy shortcuts.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="how" class="max-w-[1280px] mx-auto px-5 py-14 grid md:grid-cols-2 gap-8">
+      <div class="relative rounded-2xl p-[2px] bg-gradient-to-r from-primary/70 via-sky-500/70 to-primary/70 animate-shimmer">
+        <div class="rounded-2xl bg-surface p-6 md:p-8">
+          <h3 class="text-xl md:text-2xl font-semibold mb-3 flex items-center gap-2"><i data-lucide="image" class="w-6 h-6 text-primary"></i> 1) Draw or drop an image</h3>
+          <p class="text-white/70 text-base">Use brush/marker/highlighter or basic shapes. Drag‑drop an image onto the board.</p>
+        </div>
+      </div>
+      <div class="relative rounded-2xl p-[2px] bg-gradient-to-r from-primary/70 via-sky-500/70 to-primary/70 animate-shimmer">
+        <div class="rounded-2xl bg-surface p-6 md:p-8">
+          <h3 class="text-xl md:text-2xl font-semibold mb-3 flex items-center gap-2"><i data-lucide="bot" class="w-6 h-6 text-primary"></i> 2) Ask AI</h3>
+          <p class="text-white/70 text-base">Optionally provide a prompt. The response appears on the right with a subtle beam border.</p>
+        </div>
+      </div>
+      <div class="relative rounded-2xl p-[2px] bg-gradient-to-r from-primary/70 via-sky-500/70 to-primary/70 animate-shimmer">
+        <div class="rounded-2xl bg-surface p-6 md:p-8">
+          <h3 class="text-xl md:text-2xl font-semibold mb-3 flex items-center gap-2"><i data-lucide="download" class="w-6 h-6 text-primary"></i> 3) Save & share</h3>
+          <p class="text-white/70 text-base">Save boards locally, download PNGs, and come back later to continue.</p>
+        </div>
+      </div>
+      <div class="relative rounded-2xl p-[2px] bg-gradient-to-r from-primary/70 via-sky-500/70 to-primary/70 animate-shimmer">
+        <div class="rounded-2xl bg-surface p-6 md:p-8">
+          <h3 class="text-xl md:text-2xl font-semibold mb-3 flex items-center gap-2"><i data-lucide="sun" class="w-6 h-6 text-primary"></i> 4) Theme & performance</h3>
+          <p class="text-white/70 text-base">Unified blue theme, light/dark mode, reduced motion support, and fast Vite builds.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Showcase -->
+    <section id="showcase" class="max-w-[1280px] mx-auto px-5 py-12">
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="rounded-xl border border-border bg-surface p-5">
+          <h3 class="font-semibold mb-3">Canvas + AI</h3>
+          <img src="/src/assets/screenshots-home.png" alt="Canvas" class="rounded-lg border border-border/60"/>
+        </div>
+        <div class="rounded-xl border border-border bg-surface p-5">
+          <h3 class="font-semibold mb-3">About</h3>
+          <img src="/src/assets/screenshots-about.png" alt="About" class="rounded-lg border border-border/60"/>
+        </div>
+      </div>
+      <div class="mt-8 flex items-center gap-3">
+        <a href="/" class="px-5 py-3 rounded-lg bg-primary text-black font-semibold shadow-lg hover:brightness-110 transition">Start drawing</a>
+        <a href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener" class="px-4 py-2 rounded-lg border border-border hover:border-primary/70">Give feedback</a>
+      </div>
+    </section>
+
+    <footer class="border-t border-border/70 bg-surface/70">
+      <div class="max-w-[1280px] mx-auto px-5 py-5 text-sm text-white/60 flex items-center justify-between">
+        <span>© Cognito • Built with React, Vite and Express</span>
+        <a href="/" class="text-primary hover:underline">Open App</a>
+      </div>
+    </footer>
+
+    <script>
+      // simple scroll-reveal
+      const observer = new IntersectionObserver((entries)=>{
+        for (const e of entries) if (e.isIntersecting) { e.target.classList.add('animate-float'); observer.unobserve(e.target); }
+      }, { threshold: 0.15 });
+      document.querySelectorAll('[data-reveal]')?.forEach(el=>observer.observe(el));
+    </script>
+  </body>
+  </html>
+
+
