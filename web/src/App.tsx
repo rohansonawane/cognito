@@ -244,6 +244,22 @@ export default function App() {
         </div>
       )}
 
+      {showLimit && (
+        <div className="about-modal" role="dialog" aria-modal="true" aria-label="Limit reached">
+          <div className="about-header">
+            <strong>Daily limit reached</strong>
+            <button className="icon-btn" onClick={() => setShowLimit(false)} aria-label="Close">✕</button>
+          </div>
+          <div className="about-body">
+            <p>You’ve used your 10 AI requests for the day. Please try again later.</p>
+            <p>Want higher limits? Share feedback to help us plan upgrades.</p>
+            <div style={{ display:'flex', gap:8, marginTop:12 }}>
+              <a className="btn accent" href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer">Give feedback</a>
+              <button className="btn" onClick={() => setShowLimit(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showHow && (
         <div className="how-overlay" onClick={(e)=>{
           // Close when clicking outside popover on desktop; stay for mobile fullscreen overlay
