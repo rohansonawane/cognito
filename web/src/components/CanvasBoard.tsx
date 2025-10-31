@@ -126,8 +126,12 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(function CanvasBoar
 
   function addPoint(e: PointerEvent) {
     const rect = drawRef.current!.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const z = zoomRef.current || 1;
+    // map pointer from transformed (CSS scaled) space to canvas logical space
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
+    const x = localX / z;
+    const y = localY / z;
     const p = typeof e.pressure === 'number' && e.pressure > 0 ? e.pressure : 1;
     pointsRef.current.push({ x, y, p });
   }
