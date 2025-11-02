@@ -18,11 +18,17 @@ const MAX_IMAGE_MB = Number(process.env.MAX_IMAGE_MB || 8);
 const BODY_LIMIT = `${Math.min(Math.max(MAX_IMAGE_MB + 1, 4), 20)}mb`;
 app.use(express.json({ limit: BODY_LIMIT }));
 
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 24 * 60 * 60 * 1000); // default 24h
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 10); // default 10 requests per window per IP
 const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: Number(process.env.RATE_LIMIT_PER_MIN || 60),
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { ok: false, error: 'Rate limit exceeded. Please try again later.' },
+  handler: (req, res/*, next*/) => {
+    res.status(429).json({ ok: false, error: 'You have reached the limit. Please try again later.' });
+  }
 });
 app.use('/api/', limiter);
 

@@ -41,6 +41,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(function CanvasBoar
   const isPanningRef = useRef(false);
   const panStartRef = useRef<{x:number;y:number}>({x:0,y:0});
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const bgImageRef = useRef<HTMLImageElement | null>(null);
+  const bgPlacementRef = useRef<{dx:number;dy:number;dw:number;dh:number} | null>(null);
 
   useImperativeHandle(ref, () => ({
     undo: () => undo(),
@@ -243,15 +245,15 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(function CanvasBoar
     try {
       const rect = (drawRef.current as HTMLCanvasElement).getBoundingClientRect();
       const ctxBg = ctxBgRef.current!;
-      const old = new Image();
-      old.onload = () => {
-        const bg = getComputedStyle(document.documentElement).getPropertyValue('--color-canvas') || '#111111';
-        ctxBg.clearRect(0, 0, rect.width, rect.height);
-        ctxBg.fillStyle = bg;
-        ctxBg.fillRect(0, 0, rect.width, rect.height);
-        ctxBg.drawImage(old, 0, 0, rect.width, rect.height);
-      };
-      old.src = bgRef.current!.toDataURL('image/png');
+      const bg = getComputedStyle(document.documentElement).getPropertyValue('--color-canvas') || '#111111';
+      ctxBg.clearRect(0, 0, rect.width, rect.height);
+      ctxBg.fillStyle = bg;
+      ctxBg.fillRect(0, 0, rect.width, rect.height);
+      // redraw last background image (if any) with saved placement
+      if (bgImageRef.current && bgPlacementRef.current) {
+        const { dx, dy, dw, dh } = bgPlacementRef.current;
+        ctxBg.drawImage(bgImageRef.current, dx, dy, dw, dh);
+      }
     } catch {}
   }
 
@@ -339,6 +341,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(function CanvasBoar
       const dy = Math.floor((rect.height - dh) / 2);
       ctxBg.clearRect(0, 0, rect.width, rect.height);
       ctxBg.drawImage(img, dx, dy, dw, dh);
+      bgImageRef.current = img;
+      bgPlacementRef.current = { dx, dy, dw, dh };
       pushHistory();
     };
     img.src = dataUrl;
