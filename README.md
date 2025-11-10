@@ -2,245 +2,199 @@
 
 <img src="web/src/assets/Logo.png" alt="Cognito" height="56" />
 
-Sketch. Solve. Describe. A modern, themeable canvas app with AI assistance (OpenAI/Gemini), built for web and mobile.
+<h1>AI Canvas Lab</h1>
+<p>Sketch. Solve. Describe. A modern, themeable canvas with AI assistance for web, native, and static deployments.</p>
 
 </div>
 
-## ✨ Highlights
+## Table of Contents
+- [Overview](#overview)
+- [Feature Highlights](#feature-highlights)
+- [System Architecture](#system-architecture)
+- [Repository Layout](#repository-layout)
+- [Prerequisites](#prerequisites)
+- [Local Development](#local-development)
+  - [1. API proxy server](#1-api-proxy-server)
+  - [2. Web client](#2-web-client)
+  - [3. Expo native app (optional)](#3-expo-native-app-optional)
+  - [4. Static HTML preview (optional)](#4-static-html-preview-optional)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+  - [Render (API)](#render-api)
+  - [Netlify (Web)](#netlify-web)
+- [Using the Canvas](#using-the-canvas)
+  - [Tools & interactions](#tools--interactions)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
+- [Security & Performance](#security--performance)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
-- Unified blue theme with light/dark modes
-- Pressure‑smoothed brushes: Brush, Marker, Highlighter, Eraser
-- Shapes overlay: Line, Rectangle, Ellipse with live preview
-- Image upload and drag‑drop onto canvas (draw above BG layer)
-- History: Undo/Redo, save boards locally, PNG export
-- AI analysis: describe sketches or solve equations with optional prompt
-- Responsive, keyboard shortcuts, animated micro‑interactions
+## Overview
+AI Canvas Lab (codename Cognito) is a cross-platform whiteboard that blends layered drawing, quick exporting, and AI-powered analysis via OpenAI and Google Gemini. The repository contains:
 
-## 🧭 Architecture
+- A production-ready web app built with React, Vite, and TypeScript.
+- An Express proxy that shields API keys, enforces rate limits, and validates image payloads.
+- An Expo/React Native experience for Android (works with Expo Go).
+- A standalone static HTML build for lightweight demos.
 
-- `web/` – React + Vite (TypeScript), lucide-react icons, CSS variables
-- `server/` – Express proxy to providers (OpenAI, Gemini)
-- `native/` – Expo React Native sketch (RN‑SVG + ViewShot) [optional]
+The experience focuses on fluid input (pointer pressure smoothing, responsive controls), a unified blue theme with light/dark support, and fast integrations to ask AI for insights or solutions based on your sketches.
 
-Canvas is rendered with layered `<canvas>` elements:
+## Feature Highlights
+- Layered canvas pipeline (background, draw, overlay) with smooth strokes and live preview for lines, rectangles, and ellipses.
+- Brush family: brush, marker, highlighter, eraser with adjustable size and color palette (custom color picker).
+- Drag-and-drop image upload, local board history, undo/redo stack, and PNG export.
+- Ask AI workflow with optional prompt, provider toggle (OpenAI/Gemini), animated feedback, and clipboard copy of responses.
+- Responsive layout with keyboard shortcuts, zoom controls, and theme persistence.
+- Security-focused proxy: rate limiting, payload validation, CORS allow-list, and header hardening.
+- Deployable across Render (API), Netlify (web), and Expo (mobile) with minimal configuration.
 
-- BG layer (image/background color)
-- Draw layer (strokes/shapes committed)
-- Overlay (shape previews while dragging)
+## System Architecture
+- **Web (`web/`)** – React + Vite + TypeScript UI, Lucide icons, Tailwind-compatible design tokens in plain CSS.
+- **API proxy (`server/`)** – Express server that validates data URLs, calls OpenAI (`gpt-4o-mini`) or Gemini (`gemini-1.5-flash` by default), and normalizes the response.
+- **Mobile (`mobile/`)** – Expo/React Native drawing surface powered by `@shopify/react-native-skia`, capturing the canvas and submitting it to the proxy.
+- **Static preview (repo root)** – Vanilla JS implementation (`index.html`, `app.js`, `canvasEngine.js`, `aiAdapter.js`) for quick demos or embedding in docs.
 
-AI requests are proxied via the server to avoid exposing provider keys to the browser.
+All AI traffic flows through the proxy so that keys never reach the client, and provider-specific prompts/output shaping are centralized.
 
-## 📁 Directory Structure
-
+## Repository Layout
 ```
 .
-├─ web/
-│  ├─ index.html
-│  ├─ src/
-│  │  ├─ App.tsx                 # UI + state
-│  │  ├─ components/
-│  │  │  ├─ CanvasBoard.tsx      # layered canvas + tools
-│  │  │  ├─ ColorPicker.tsx
-│  │  │  └─ SizeControl.tsx
-│  │  ├─ ai/api.ts               # fetch /api/analyze
-│  │  ├─ assets/Logo.png         # brand
-│  │  └─ styles.css              # tokens + layout + animations
-│  └─ vite.config.ts
-├─ server/
-│  └─ src/index.js               # Express proxy (OpenAI/Gemini)
-└─ native/                       # Expo (optional)
+├─ index.html / app.js / canvasEngine.js     # Static demo (no build step)
+├─ web/                                      # Vite + React web client
+│  ├─ src/App.tsx                            # Root application shell
+│  ├─ src/components/                        # Canvas tools and UI widgets
+│  ├─ src/ai/api.ts                          # `/api/analyze` fetch wrapper
+│  └─ src/styles.css                         # Theme tokens & layout
+├─ server/                                   # Express proxy
+│  └─ src/index.js                           # Routes + provider adapters
+├─ mobile/                                   # Expo (Android focus)
+│  └─ src/screens/CanvasScreen.tsx           # Skia canvas + Ask AI flow
+├─ native/                                   # Legacy RN scaffold (Expo)
+├─ netlify.toml                              # Build & redirect config for web
+├─ render.yaml                               # Render blueprint for API server
+└─ design.json                               # Design tokens referenced by clients
 ```
 
-## 🚀 Getting Started (Local Dev)
+## Prerequisites
+- Node.js ≥ 20 (recommended) and npm ≥ 10.
+- Access to OpenAI and/or Gemini API keys.
+- Optional: Expo CLI (`npm i -g expo`) and Android Studio or a physical device for the native app.
+- Optional: Netlify CLI / Render CLI if you prefer command-line deployments.
 
-1) API server
+## Local Development
 
+### 1. API proxy server
 ```bash
 cd server
-cp .env.example .env   # if you created one; or edit server/.env
-# Required: set OPENAI_API_KEY (and/or GEMINI_API_KEY)
-npm i && npm run start
-# → http://127.0.0.1:8787 (GET /api/health)
+cp .env.example .env  # create if it does not exist
+# Populate OPENAI_API_KEY and/or GEMINI_API_KEY plus optional settings
+npm install
+npm run start         # or npm run dev for watch mode
+# Health check → http://127.0.0.1:8787/api/health
 ```
 
-2) Web app
+Verify connectivity:
+```bash
+curl http://127.0.0.1:8787/api/health
+```
 
+### 2. Web client
 ```bash
 cd web
-npm i && npm run dev
-# → http://127.0.0.1:5173  (proxy /api → 8787)
+npm install
+npm run dev           # http://127.0.0.1:5173
 ```
+The Vite dev server proxies `/api/*` to `http://127.0.0.1:8787` by default. Update `vite.config.ts` if you change ports.
 
-3) (Optional) Native app
-
+### 3. Expo native app (optional)
 ```bash
-cd native
-npm i && npm start
-# Ensure the server is reachable from your device/emulator
+cd mobile
+npm install
+export SERVER_URL="http://<your-machine-ip>:8787"  # or edit app.config.ts
+npm run android      # launches Metro + Android build
 ```
+The app captures the Skia canvas and posts a base64 PNG to `${SERVER_URL}/api/analyze`. If you are using the provided Express proxy, update the fetch call in `CanvasScreen.tsx` to send the payload as `{ image: "data:image/png;base64,..." }` (the server expects the `image` field).
 
-## ⚙️ Configuration
-
-`server/.env`
-
+### 4. Static HTML preview (optional)
+Open `index.html` directly in a modern browser or serve it with any static server:
 ```bash
-OPENAI_API_KEY=sk-...
-GEMINI_API_KEY=...
-CORS_ORIGIN=http://127.0.0.1:5173
-RATE_LIMIT_PER_MIN=120
-MAX_IMAGE_MB=8
+npx serve .
 ```
+The static build uses `window.APP_CONFIG.aiEndpoint` from `app.js`; set it if you want to forward requests to the proxy.
 
-`web/src/App.tsx`
+## Configuration
 
-- Provider selector (OpenAI/Gemini) in header
-- Theme toggle (dark/light) stored in `localStorage`
+### Server environment variables (`server/.env`)
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `OPENAI_API_KEY` | Yes (if using OpenAI) | — | API key for OpenAI `chat/completions` (model `gpt-4o-mini`). |
+| `GEMINI_API_KEY` | Yes (if using Gemini) | — | Google Generative Language API key. |
+| `CORS_ORIGIN` | Recommended | `*` | Comma-separated list of allowed origins for browser requests. |
+| `MAX_IMAGE_MB` | No | `8` | Maximum allowed image payload size (MB). |
+| `RATE_LIMIT_WINDOW_MS` | No | `86400000` | Rate limit window in milliseconds (default 24h). |
+| `RATE_LIMIT_MAX` | No | `10` | Max requests per IP per window. |
+| `GEMINI_MODEL` | No | `gemini-1.5-flash-latest` | Override default Gemini model. |
+| `GEMINI_API_VERSION` | No | `v1beta` | Gemini API version segment. |
+| `GEMINI_API_BASE` | No | `https://generativelanguage.googleapis.com` | Override API base URL. |
 
-## 🔐 Security & Performance
+### Client configuration
+- **Web** – The provider selector and theme toggle live in `web/src/App.tsx`; selections persist in `localStorage`. The client hits `/api/analyze` relative to the current origin.
+- **Expo** – Configure `extra.SERVER_URL` in `app.config.ts` or via environment variable (`SERVER_URL`) when running `expo start`.
+- **Static demo** – Set `window.APP_CONFIG.aiEndpoint` in `index.html` (defaults to empty, meaning AI calls are disabled).
 
-Server middleware:
+## Deployment
 
-- `helmet` – secure headers
-- `compression` – gzip/deflate
-- `express-rate-limit` – per‑minute throttling on `/api/`
-- CORS origin allow‑list via `CORS_ORIGIN`
-- Data URL validation: type whitelist (png/jpg/jpeg/webp) and size guard (`MAX_IMAGE_MB`)
+### Render (API)
+`render.yaml` provisions the Express proxy as a Render Web Service:
+1. Create a new Render service using this repository and select the `render.yaml` blueprint.
+2. Provide `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `CORS_ORIGIN` environment variables in the Render dashboard.
+3. Expose `https://<service>.onrender.com/api/health` to confirm the deployment.
 
-Client best practices:
+### Netlify (Web)
+`netlify.toml` builds the Vite site and redirects `/api/*` to your hosted proxy:
+1. Deploy the `web/` directory to Netlify (`netlify deploy --build` or via dashboard).
+2. Set the `SERVER_URL` environment variable in Netlify to the deployed proxy origin (e.g. Render).
+3. Netlify will run `npm ci && npm run build` and publish `web/dist`.
+4. Validate `https://<site>.netlify.app` → `/api/health` (should proxy to your server).
 
-- Keys stay on the server only (never in the client bundle)
-- Animated effects respect `prefers-reduced-motion`
-- Minimal DOM reflows, CSS variables for theme, Vite code-splitting
+You can adapt similar settings for Vercel, Cloudflare Pages, or any static hosting service by forwarding `/api/*` to the proxy.
 
-## 🖱️ Controls & Shortcuts
+## Using the Canvas
 
-- Draw: left click/drag (pointer pressure when available)
-- Shapes: select Line/Rect/Ellipse → drag to preview → release to commit
-- Zoom: on‑canvas control (top‑right), Reset View
-- Ask AI: bottom‑center prompt + button (shows animated state)
-- Undo/Redo: Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z
-- Save: header Tools → Save (local boards)
+### Tools & interactions
+- Select a brush or shape, adjust size and color (custom color picker supported).
+- Drag-and-drop or upload images to place them on the background layer; continue drawing on top.
+- Zoom controls live in the top-right of the canvas; reset view restores fit-to-screen.
+- Saved boards persist locally (IndexedDB/localStorage); export PNG snapshots anytime.
+- Ask AI with an optional text prompt; responses stream into the side panel and can be copied.
 
-## 🎨 Theming
+### Keyboard shortcuts
+- Draw: left click/drag (pressure enabled devices supported).
+- Undo `Cmd/Ctrl + Z`; Redo `Cmd/Ctrl + Shift + Z`.
+- Toggle theme via the header switch (persists automatically).
+- Additional shortcuts (zoom, save) are surfaced in the UI tooltips.
 
-Theme tokens in `web/src/styles.css` under `:root` and `[data-theme="light"]`.
+## Security & Performance
+- `helmet` for secure headers and disabled `x-powered-by`.
+- `compression` for gzip/deflate responses.
+- `express-rate-limit` with JSON error responses to deter abuse.
+- Strict MIME/type and size validation for `data:image/*` payloads.
+- Client honours `prefers-reduced-motion`, keeps DOM updates minimal, and leverages CSS variables for instant theming.
 
-- Single blue palette (primary = accent) for consistency
-- Toggle with the header theme switch (persists via localStorage)
+## Roadmap
+- Layers panel (show/hide/lock/rename) with per-layer export.
+- Rich text and shape library (arrows, polygons, sticky notes).
+- OCR and math parsing for handwriting with LaTeX export.
+- Advanced export formats (SVG, PDF) and transparent backgrounds.
+- PWA install + offline board caching and background sync.
+- Realtime collaboration (multi-cursor, presence, comments).
+- Streaming AI responses with partial token display.
+- Accessibility upgrades: keyboard-first workflow, high-contrast theme, screen-reader hints.
 
-## 🧪 Build & Preview
+## Contributing
+Issues and PRs are welcome. For large changes (new providers, architectural updates), please start a discussion to align on approach and maintain consistency across web, mobile, and server clients.
 
-```bash
-cd web && npm run build && npm run preview
-# dist/ is generated; preview at http://127.0.0.1:5173
-```
-
-## 🧰 API Contract
-
-`POST /api/analyze`
-
-Request:
-
-```json
-{ "image": "data:image/png;base64,...", "provider": "openai" | "gemini", "prompt": "optional" }
-```
-
-Response:
-
-```json
-{ "ok": true, "message": "..." }
-```
-
-Errors return `{ ok:false, error:"..." }` with appropriate status codes.
-
-## 🛣️ Roadmap
-
-- Layers panel (show/hide/lock/rename)
-- Free‑text labels with font/weight
-- Export: JPG/SVG/PDF, transparent BG option
-- PWA install, offline caching
-- Streaming AI responses
-
-## 🤝 Contributing
-
-Issues and PRs are welcome. Please open a discussion for significant changes (architecture, provider integrations, new UI patterns).
-
-## 📄 License
-
+## License
 MIT © Cognito
-
----
-
-## 🧰 Tech Stack
-
-<div align="center">
-
-<img alt="React" src="https://img.shields.io/badge/React-20232a?style=for-the-badge&logo=react&logoColor=61DAFB"/>
-<img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-3178c6?style=for-the-badge&logo=typescript&logoColor=white"/>
-<img alt="Vite" src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white"/>
-<img alt="Express" src="https://img.shields.io/badge/Express-000000?style=for-the-badge&logo=express&logoColor=white"/>
-<img alt="Node.js" src="https://img.shields.io/badge/Node.js-3c873a?style=for-the-badge&logo=nodedotjs&logoColor=white"/>
-<img alt="OpenAI" src="https://img.shields.io/badge/OpenAI-412991?style=for-the-badge&logo=openai&logoColor=white"/>
-<img alt="Gemini" src="https://img.shields.io/badge/Gemini-1A73E8?style=for-the-badge&logo=google&logoColor=white"/>
-<img alt="CSS" src="https://img.shields.io/badge/CSS-1572B6?style=for-the-badge&logo=css3&logoColor=white"/>
-
-</div>
-
-## 📚 Detailed Usage
-
-- Choose a brush or shape, set color and size. The canvas uses pressure smoothing and an overlay to preview shapes.
-- Drop an image onto the canvas; it lands on the background layer so strokes remain editable above it.
-- Use zoom controls on the canvas (top‑right). Reset view at any time.
-- Enter an optional prompt and press Ask AI (bottom‑center). While analyzing, the response card and button animate.
-- Saved boards are stored locally; download PNG exports for sharing.
-
-## 🔭 Future Scope
-
-- Realtime collaboration: multi‑cursor drawing, presence, cursors, and comments.
-- Layers panel: reordering, visibility, lock, rename; per‑layer export.
-- Rich shapes & text: arrows, polygons, bezier, sticky notes; text styling; emojis.
-- OCR & math: handwriting recognition, LaTeX export, equation parsing.
-- Advanced exports: SVG/PDF, transparent background, tiled poster export.
-- PWA & Offline: installable app, offline boards, background sync.
-- Streaming AI: partial tokens, inline citations/sources, step‑by‑step solutions.
-- Accessibility: keyboard-only tool switching, high‑contrast mode, screen-reader hints.
-
-### 🎓 LMS & Education Integrations
-
-- LTI 1.3 integration to embed Cognito as an assignment/lesson inside LMS (Canvas, Moodle, Blackboard).
-- Classroom mode: teacher view to broadcast a board; student submissions collected as boards.
-- Auto‑grading assists: rubric + AI check for equations and diagrams.
-- Account linking and roster sync, per‑class storage and permissions.
-- Export to LMS gradebook and attach results as PDF/SVG.
-
-
-AI Canvas Lab
-
-Now available as:
-- Static HTML (root files) — quick preview
-- React web app (`web/`) — Vite + TS
-- React Native app (`native/`) — Expo + react-native-svg
-- Node proxy server (`server/`) — OpenAI + Gemini support
-
-Run server (proxy for AI):
-1) cd server
-2) Create .env with `OPENAI_API_KEY=` and/or `GEMINI_API_KEY=`
-3) npm i
-4) npm run start (listens on http://127.0.0.1:8787)
-
-Run React web app:
-1) cd web && npm i
-2) npm run dev (proxy /api to 127.0.0.1:8787)
-
-Run React Native (Expo):
-1) cd native && npm i && npm start
-2) Ensure the server is reachable from device (adjust URL in code if needed)
-
-API contract:
-- POST /api/analyze { image: dataUrl, provider: "openai"|"gemini", prompt? }
-- Response: { ok: boolean, message?: string, error?: string }
-
-Design:
-- Styling follows tokens in design.json (applied via CSS variables in root styles and used in RN styles).
-
 
