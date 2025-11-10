@@ -67,15 +67,19 @@ app.listen(PORT, () => console.log(`[ai-canvas-server] listening on http://127.0
 
 async function analyzeOpenAI(dataUrl, prompt, apiKey) {
   const messages = [
-    {
-      role: 'system',
-      content:
-        'You analyze drawings and reply in plain English text only. No LaTeX, no Markdown, no special characters, no bullet lists. If it is a math equation, give a short explanation and end with "Answer: <final value>".'
+     {
+       role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: `You are an expert vision tutor for whiteboard sketches. Analyze any image (math, diagrams, UI wireframes, notes, charts). Always respond clearly and helpfully for a general audience. Use short sections and bullet points where useful. If math is present, show concise step-by-step reasoning and end with a final line that begins with "Answer:". If a diagram or UI sketch, describe key parts and suggest improvements. If handwriting/text, summarize and extract action items. If ambiguous, state assumptions or ask 1-2 clarifying questions. Keep responses under 12 lines unless the user prompt requests more.\nOutput format: Title: <one-line title>\nWhat I see: <1-2 lines>\nDetails: <bullets>\nIf math: Steps: <short steps>\nAnswer: <final>\nTips/Next: <1-3 brief suggestions>`
+        }
+      ]
     },
     {
       role: 'user',
       content: [
-        { type: 'text', text: prompt || 'Describe this drawing. If it is an equation, solve it and respond in plain text.' },
+        { type: 'text', text: prompt || 'Analyze and explain the image per the format. If math, solve with steps and final answer.' },
         { type: 'image_url', image_url: { url: dataUrl } }
       ]
     }
@@ -98,18 +102,25 @@ async function analyzeOpenAI(dataUrl, prompt, apiKey) {
 }
 
 async function analyzeGemini(dataUrl, prompt, apiKey) {
-  const base64 = dataUrl.split(',')[1] || '';
+  const [meta, base64Raw] = dataUrl.split(',');
+  if (!base64Raw) throw new Error('Invalid image payload');
+  const mimeMatch = /^data:(image\/[a-z0-9.+-]+);base64$/i.exec(meta || '');
+  const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+  const base64 = base64Raw.trim();
+  const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+  const apiVersion = process.env.GEMINI_API_VERSION || 'v1beta';
+  const apiHost = process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com';
   const body = {
     contents: [
       {
         parts: [
-          { text: prompt || 'Describe this drawing. If it is an equation, solve it.' },
-          { inline_data: { mime_type: 'image/png', data: base64 } }
+          { text: (prompt || '') + '\n\nRole: Expert vision tutor for sketches. Follow this output format with short, clear sections. If math, show steps and end with Answer: <value>. If diagram/UI, describe parts and suggestions. If text, summarize and extract actions. Keep under 12 lines.' },
+          { inline_data: { mime_type: mimeType, data: base64 } }
         ]
       }
     ]
   };
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `${apiHost}/${apiVersion}/models/${model}:generateContent?key=${apiKey}`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -120,7 +131,8 @@ async function analyzeGemini(dataUrl, prompt, apiKey) {
     throw new Error(`Gemini ${resp.status}: ${t}`);
   }
   const json = await resp.json();
-  const text = json.candidates?.[0]?.content?.parts?.map(p => p.text).join(' ') || 'No response';
+  const parts = json.candidates?.[0]?.content?.parts || [];
+  const text = parts.map(p => (p && p.text) || '').filter(Boolean).join('\n').trim() || 'No response';
   return toPlainText(text);
 }
 
