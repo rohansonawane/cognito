@@ -18,3 +18,15 @@ services:
         value: "120"
       - key: MAX_IMAGE_MB
         value: "8"
+  - type: static
+    name: cognito-web
+    rootDir: web
+    buildCommand: npm install && npm run build
+    publishPath: dist
+    envVars:
+      - key: SERVER_URL
+        value: https://cognito-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /api/(.*)
+        destination: https://cognito-api.onrender.com/api/$1
