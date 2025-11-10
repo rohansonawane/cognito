@@ -9,7 +9,7 @@
 # Redirect API calls to your hosted server (set SERVER_URL env var after deploy)
 [[redirects]]
   from = "/api/*"
-  to = "${SERVER_URL}/api/:splat"
+  to = "https://cognito-api-zoi9.onrender.com/api/:splat"
   status = 200
   force = true
 
