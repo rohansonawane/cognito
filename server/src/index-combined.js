@@ -1,6 +1,9 @@
 // Combined server that serves both frontend and backend
 // Use this for single-server hosting (Railway, Fly.io, etc.)
 
+// Load environment variables from .env file
+import 'dotenv/config';
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
