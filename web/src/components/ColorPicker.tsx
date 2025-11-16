@@ -12,21 +12,45 @@ export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = 
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!open) return;
+    
     const onDoc = (e: MouseEvent | TouchEvent) => {
       if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!ref.current.contains(target)) {
+        setOpen(false);
+      }
     };
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('touchstart', onDoc);
+    
+    // Use a small delay to allow button click to process first
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('mousedown', onDoc);
+      document.addEventListener('touchend', onDoc);
+    }, 100);
+    
     return () => {
+      clearTimeout(timeoutId);
       document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('touchstart', onDoc);
+      document.removeEventListener('touchend', onDoc);
     };
-  }, []);
+  }, [open]);
 
   return (
     <div className="color-popper" ref={ref}>
-      <button className="btn" onClick={() => setOpen((v) => !v)} title="Color">
+      <button 
+        className="btn" 
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        title="Color"
+      >
         <span className="color-dot" style={{ background: value }} />
         <span style={{ marginLeft: 6, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-secondary)' }}>{value.toUpperCase()}</span>
       </button>
