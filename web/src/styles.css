@@ -280,20 +280,23 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
   position: relative;
   margin: 4rem auto;
   max-width: calc(var(--layout-max) * 0.9);
-  padding: 2.75rem clamp(1.25rem, 3vw, 2.75rem);
+  width: 90%;
+  padding: 2.475rem clamp(1.125rem, 2.7vw, 2.475rem);
   border-radius: var(--radius-lg);
   border: 1px solid color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
   background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--color-primary) 20%, transparent) 0%, transparent 62%), var(--color-surface);
   box-shadow: 0 30px 80px rgba(14,165,233,0.18);
-  transform: scale(0.9);
-  transform-origin: center;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .integration-inner {
   display: flex;
-  gap: clamp(2rem, 4vw, 3.5rem);
+  gap: clamp(1.8rem, 3.6vw, 3.15rem);
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
 }
 .integration-copy {
   flex: 1 1 320px;
@@ -320,9 +323,10 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
 .integration-layout {
   display: grid;
   grid-template-columns: minmax(0, 75%) minmax(0, 25%);
-  gap: 2rem;
+  gap: 1.8rem;
   width: 100%;
   align-items: start;
+  box-sizing: border-box;
 }
 .integration-side {
   display: flex;
@@ -1134,8 +1138,9 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
   .integration-cta {
     margin: 2rem auto;
     padding: 1.35rem 1.125rem;
-    transform: scale(0.9);
     max-width: calc(100% - 2rem);
+    width: calc(100% - 2rem);
+    box-sizing: border-box;
   }
   .integration-inner {
     gap: 1.35rem;
@@ -1212,8 +1217,9 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
     margin: 1.35rem auto;
     padding: 1.125rem 0.9rem;
     border-radius: var(--radius-md);
-    transform: scale(0.9);
     max-width: calc(100% - 1.5rem);
+    width: calc(100% - 1.5rem);
+    box-sizing: border-box;
   }
   .integration-headline h2 {
     font-size: clamp(1.125rem, 5.4vw, 1.575rem);
