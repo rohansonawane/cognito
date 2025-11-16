@@ -935,13 +935,22 @@ export default function App() {
                 </p>
               </div>
               <div className="integration-rail">
-                <div className="integration-stack" aria-label="Supported tech stack">
-                  {techStack.map(({ name, slug, icon }) => (
-                    <div key={slug} className={`stack-chip ${slug}`}>
-                      <span className="stack-chip__icon">{icon}</span>
-                      <span className="stack-chip__label">{name}</span>
-                    </div>
-                  ))}
+                <div className="integration-stack-wrapper">
+                  <div className="integration-stack" aria-label="Supported tech stack">
+                    {techStack.map(({ name, slug, icon }) => (
+                      <div key={slug} className={`stack-chip ${slug}`}>
+                        <span className="stack-chip__icon">{icon}</span>
+                        <span className="stack-chip__label">{name}</span>
+                      </div>
+                    ))}
+                    {/* Duplicate for seamless loop */}
+                    {techStack.map(({ name, slug, icon }) => (
+                      <div key={`${slug}-dup`} className={`stack-chip ${slug}`}>
+                        <span className="stack-chip__icon">{icon}</span>
+                        <span className="stack-chip__label">{name}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
