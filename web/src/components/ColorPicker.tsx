@@ -12,12 +12,16 @@ export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = 
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
+    const onDoc = (e: MouseEvent | TouchEvent) => {
       if (!ref.current) return;
       if (!ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    document.addEventListener('touchstart', onDoc);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('touchstart', onDoc);
+    };
   }, []);
 
   return (
@@ -35,15 +39,40 @@ export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = 
         />
       )}
       {open && (
-        <div className="popper-panel">
+        <div className="popper-panel" onClick={(e) => e.stopPropagation()}>
           <div className="color-row">
             {swatches.map((c) => (
-              <button key={c} className={`swatch ${value===c?'selected':''}`} style={{ background: c }} onClick={() => onChange(c)} title={c} />
+              <button 
+                key={c} 
+                className={`swatch ${value===c?'selected':''}`} 
+                style={{ background: c }} 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onChange(c);
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onChange(c);
+                }}
+                title={c} 
+              />
             ))}
           </div>
-          <div className="color-custom" style={{ marginTop: 8 }}>
-            <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
-            <input className="hex-input" value={value.toUpperCase()} onChange={(e) => onChange(normalizeHex(e.target.value))} />
+          <div className="color-custom" style={{ marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+            <input 
+              type="color" 
+              value={value} 
+              onChange={(e) => onChange(e.target.value)} 
+              onClick={(e) => e.stopPropagation()}
+            />
+            <input 
+              className="hex-input" 
+              value={value.toUpperCase()} 
+              onChange={(e) => onChange(normalizeHex(e.target.value))} 
+              onClick={(e) => e.stopPropagation()}
+            />
           </div>
         </div>
       )}
