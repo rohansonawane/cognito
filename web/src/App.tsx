@@ -833,11 +833,10 @@ export default function App() {
           )}
           {isMobile && (
             <div className="canvas-ask-mobile">
-              <label className="ask-label" htmlFor="ask-input-mobile">Ask AI</label>
               <input
                 id="ask-input-mobile"
                 className="ask-input"
-                placeholder="Describe what you'd like help with"
+                placeholder="Ask AI (optional prompt)"
                 value={promptText}
                 onChange={(e) => setPromptText(e.target.value)}
               />
