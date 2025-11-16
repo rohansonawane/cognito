@@ -23,23 +23,16 @@
 <div align="center">
 
 ### Canvas Interface
-![Canvas Interface](https://via.placeholder.com/800x450/1e40af/ffffff?text=Canvas+Interface+with+AI+Analysis)
+![Canvas Interface](docs/screenshots/screenshot-main-canvas.png)
 
 *Modern canvas with drawing tools, AI analysis panel, and theme toggle*
 
-### Drawing Tools
-![Drawing Tools](https://via.placeholder.com/800x450/1e40af/ffffff?text=Brush+Marker+Highlighter+Shapes)
-
-*Multiple brush types, shapes, and color customization*
-
 ### AI Analysis
-![AI Analysis](https://via.placeholder.com/800x450/1e40af/ffffff?text=AI+Powered+Analysis+Results)
+![AI Analysis](docs/screenshots/screenshot-ai-analysis.png)
 
 *Real-time AI analysis of sketches with structured output*
 
 </div>
-
-> **Note:** Replace placeholder images with actual screenshots from your application.
 
 ## ✨ Features
 
