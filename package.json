@@ -1,0 +1,16 @@
+{
+  "name": "ai-canvas-combined",
+  "version": "1.0.0",
+  "description": "AI Canvas - Combined frontend and backend",
+  "type": "module",
+  "scripts": {
+    "build": "cd web && npm install && npm run build",
+    "start": "cd server && node src/index-combined.js",
+    "dev:web": "cd web && npm run dev",
+    "dev:server": "cd server && npm run dev"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
+
