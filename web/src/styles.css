@@ -183,7 +183,7 @@ select.btn:focus { outline: none; }
 input.hex-input { height: 30px; }
 .app-main { display:grid; grid-template-columns:1fr; gap:var(--grid-gap); padding:1rem; max-width:var(--layout-max); margin:0 auto; width:100%; }
 .app-main { align-items: start; }
-.tools { position:sticky; bottom:0; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-md); padding:0.9rem; box-shadow:var(--shadow-soft); display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0.9rem; z-index:6; overflow:visible; animation: floatIn var(--motion-normal) var(--ease-standard) 60ms both; }
+.tools { background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-md); padding:0.9rem; box-shadow:var(--shadow-soft); display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0.9rem; z-index:6; overflow:visible; animation: floatIn var(--motion-normal) var(--ease-standard) 60ms both; }
 .tools .tool-group { min-width: 0; }
 .tools .btn { padding: 8px 10px; font-size: 12px; }
 .tools .color-popper .btn { justify-content: flex-start; }
@@ -735,7 +735,7 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
   .app-header { padding: 10px 0; }
   /* Desktop: left vertical tools, canvas, right panel */
   .app-main { grid-template-columns: 160px 1fr 260px; gap: 1.1rem; align-items: start; }
-  .tools { position: sticky; top: 84px; align-self: start; height: fit-content; display: grid; grid-template-columns: 1fr; z-index: 10; }
+  .tools { align-self: start; height: fit-content; display: grid; grid-template-columns: 1fr; z-index: 10; }
   .tools .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .tools .icon-row { display: grid; grid-template-columns: repeat(3, 1fr); }
   .canvas-wrap { height: 72vh; min-height: 72vh; max-height: 72vh; }
@@ -745,7 +745,7 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
 /* Mobile and tablet: tools horizontal above canvas */
 @media (max-width: 1023px) {
   .app-main { grid-template-columns: 1fr; gap: 0.75rem; }
-  .tools { grid-column: 1 / -1; position: sticky; top: 74px; z-index: 10; display: flex; align-items: center; gap: 10px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px; box-shadow: var(--shadow-soft); overflow-x: auto; scrollbar-width: thin; }
+  .tools { grid-column: 1 / -1; z-index: 10; display: flex; align-items: center; gap: 10px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px; box-shadow: var(--shadow-soft); overflow-x: auto; scrollbar-width: thin; }
   .tools::-webkit-scrollbar { height: 6px; }
   .tools::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--color-border) 80%, transparent); border-radius: 9999px; }
   .tools .tool-group { display: flex; align-items: center; gap: 8px; border: none; padding: 0; margin: 0; flex: 0 0 auto; }
@@ -1024,7 +1024,7 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
   .app-main { grid-template-columns: 1fr; }
   .header-inner { padding:10px 12px; }
   .app-mobile-menu { display: grid; gap:8px; padding: 8px 12px; border-top: 1px solid var(--color-border); background: var(--color-surface); }
-  .tools { position: sticky; top: 74px; z-index: 10; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; background: var(--color-surface); border:1px solid var(--color-border); border-radius: var(--radius-md); padding: 8px 10px; box-shadow: var(--shadow-soft); transform: none; left: auto; }
+  .tools { z-index: 10; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; background: var(--color-surface); border:1px solid var(--color-border); border-radius: var(--radius-md); padding: 8px 10px; box-shadow: var(--shadow-soft); transform: none; left: auto; }
   .tools.open { width: 280px; }
   .tools.collapsed { width: 56px; padding: 6px; }
   .tools.collapsed .tool-group:not(:first-child) { display: none; }
