@@ -27,22 +27,46 @@ export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = 
       const scrollY = window.scrollY;
       const scrollX = window.scrollX;
       
+      // Check if button is inside side panel
+      let sidePanelElement: HTMLElement | null = null;
+      let currentElement: HTMLElement | null = buttonRef.current.parentElement;
+      while (currentElement) {
+        if (currentElement.classList.contains('side-panel')) {
+          sidePanelElement = currentElement;
+          break;
+        }
+        currentElement = currentElement.parentElement;
+      }
+      
       let left = rect.left + scrollX;
       let top = rect.bottom + scrollY + 8;
       
-      // Center on mobile if screen is narrow
-      const isMobile = viewportWidth < 768;
-      if (isMobile) {
-        left = scrollX + (viewportWidth / 2) - (panelWidth / 2);
-        // Ensure it doesn't go off-screen
-        left = Math.max(16, Math.min(left, scrollX + viewportWidth - panelWidth - 16));
-      } else {
-        // On desktop, align to button but ensure it doesn't go off-screen
-        if (left + panelWidth > scrollX + viewportWidth - 16) {
-          left = scrollX + viewportWidth - panelWidth - 16;
-        }
+      // If button is in side panel, position popup to the left of side panel
+      if (sidePanelElement) {
+        const sidePanelRect = sidePanelElement.getBoundingClientRect();
+        // Position to the left of the side panel
+        left = sidePanelRect.left + scrollX - panelWidth - 16;
+        // If not enough space on left, position to the right
         if (left < scrollX + 16) {
-          left = scrollX + 16;
+          left = sidePanelRect.right + scrollX + 16;
+        }
+        // Align vertically with button
+        top = rect.top + scrollY;
+      } else {
+        // Center on mobile if screen is narrow
+        const isMobile = viewportWidth < 768;
+        if (isMobile) {
+          left = scrollX + (viewportWidth / 2) - (panelWidth / 2);
+          // Ensure it doesn't go off-screen
+          left = Math.max(16, Math.min(left, scrollX + viewportWidth - panelWidth - 16));
+        } else {
+          // On desktop, align to button but ensure it doesn't go off-screen
+          if (left + panelWidth > scrollX + viewportWidth - 16) {
+            left = scrollX + viewportWidth - panelWidth - 16;
+          }
+          if (left < scrollX + 16) {
+            left = scrollX + 16;
+          }
         }
       }
       
