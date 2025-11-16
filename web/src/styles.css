@@ -177,7 +177,7 @@ select.btn:focus { outline: none; }
 .icon-row { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; width:100%; align-items:center; justify-items:center; grid-auto-flow: row; }
 .icon-btn:hover { background: var(--color-surface-hover); transform: translateY(-1px) scale(1.04); transition: transform var(--transition), background var(--transition); }
 .color-dot { width:14px; height:14px; border-radius:50%; display:inline-block; vertical-align:middle; box-shadow: 0 0 0 1px var(--color-border) inset; }
-.popper-panel { position: absolute; margin-top: 8px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; padding: 10px; box-shadow: var(--shadow-strong); z-index: 100; opacity: 0; transform: translateY(6px) scale(.98); animation: popIn var(--motion-fast) var(--ease-standard) forwards; left: 0; right: auto; min-width: 280px; top: 100%; }
+.popper-panel { position: fixed; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; padding: 10px; box-shadow: var(--shadow-strong); z-index: 9999; opacity: 0; transform: translateY(6px) scale(.98); animation: popIn var(--motion-fast) var(--ease-standard) forwards; min-width: 280px; }
 .color-popper { position: relative; }
 .hex-input { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); border-radius: 8px; padding: 6px 8px; width: 100px; }
 input.hex-input { height: 30px; }
@@ -1039,16 +1039,10 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
   .panel-toggle { margin: 8px 0 12px; background: var(--color-surface); color: var(--color-text); border:1px solid var(--color-border); border-radius: 9999px; padding: 8px 12px; }
   .panel-mobile { background: var(--color-surface); border:1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px; box-shadow: var(--shadow-soft); margin-bottom: 10px; }
   .popper-panel { 
-    left: 50% !important; 
-    right: auto !important; 
     min-width: 280px; 
     max-width: calc(100vw - 32px);
-    transform: translateX(-50%) translateY(6px) scale(.98) !important;
-    animation: popInMobile var(--motion-fast) var(--ease-standard) forwards !important;
-  }
-  @keyframes popInMobile {
-    from { opacity: 0; transform: translateX(-50%) translateY(6px) scale(.98); }
-    to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    transform: translateY(6px) scale(.98);
+    animation: popIn var(--motion-fast) var(--ease-standard) forwards;
   }
   .swatch { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .color-custom input[type="color"] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }

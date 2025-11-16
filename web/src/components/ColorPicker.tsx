@@ -9,15 +9,73 @@ type Props = {
 
 export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = false }: Props) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
   const ref = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open || !buttonRef.current || !panelRef.current) return;
+    
+    const updatePosition = () => {
+      if (!buttonRef.current || !panelRef.current) return;
+      const rect = buttonRef.current.getBoundingClientRect();
+      const panelWidth = 280; // min-width from CSS
+      const panelHeight = 150; // approximate height
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const scrollY = window.scrollY;
+      const scrollX = window.scrollX;
+      
+      let left = rect.left + scrollX;
+      let top = rect.bottom + scrollY + 8;
+      
+      // Center on mobile if screen is narrow
+      const isMobile = viewportWidth < 768;
+      if (isMobile) {
+        left = scrollX + (viewportWidth / 2) - (panelWidth / 2);
+        // Ensure it doesn't go off-screen
+        left = Math.max(16, Math.min(left, scrollX + viewportWidth - panelWidth - 16));
+      } else {
+        // On desktop, align to button but ensure it doesn't go off-screen
+        if (left + panelWidth > scrollX + viewportWidth - 16) {
+          left = scrollX + viewportWidth - panelWidth - 16;
+        }
+        if (left < scrollX + 16) {
+          left = scrollX + 16;
+        }
+      }
+      
+      // If popup would go below viewport, show it above the button
+      if (top + panelHeight > scrollY + viewportHeight - 16) {
+        top = rect.top + scrollY - panelHeight - 8;
+        if (top < scrollY + 16) {
+          top = scrollY + 16;
+        }
+      }
+      
+      setPosition({ top, left });
+    };
+    
+    // Small delay to ensure DOM is ready
+    const timeoutId = setTimeout(updatePosition, 0);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     
     const onDoc = (e: MouseEvent | TouchEvent) => {
-      if (!ref.current) return;
+      if (!ref.current || !panelRef.current) return;
       const target = e.target as Node;
-      if (!ref.current.contains(target)) {
+      if (!ref.current.contains(target) && !panelRef.current.contains(target)) {
         setOpen(false);
       }
     };
@@ -38,6 +96,7 @@ export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = 
   return (
     <div className="color-popper" ref={ref}>
       <button 
+        ref={buttonRef}
         className="btn" 
         onClick={(e) => {
           e.preventDefault();
@@ -63,7 +122,12 @@ export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = 
         />
       )}
       {open && (
-        <div className="popper-panel" onClick={(e) => e.stopPropagation()}>
+        <div 
+          ref={panelRef}
+          className="popper-panel" 
+          style={{ top: `${position.top}px`, left: `${position.left}px` }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="color-row">
             {swatches.map((c) => (
               <button 
