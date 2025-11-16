@@ -390,8 +390,29 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     window.addEventListener('pointerup', onUp);
     hit.addEventListener('pointerleave', onLeave);
     window.addEventListener('resize', onResize);
-    const onKeyDown = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); spacePressedRef.current = true; } };
-    const onKeyUp = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); spacePressedRef.current = false; isPanningRef.current = false; } };
+    const onKeyDown = (e: KeyboardEvent) => { 
+      if (e.code === 'Space') {
+        const target = e.target as HTMLElement;
+        // Don't prevent default if user is typing in an input, textarea, or contentEditable element
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+          return;
+        }
+        e.preventDefault(); 
+        spacePressedRef.current = true; 
+      } 
+    };
+    const onKeyUp = (e: KeyboardEvent) => { 
+      if (e.code === 'Space') {
+        const target = e.target as HTMLElement;
+        // Don't prevent default if user is typing in an input, textarea, or contentEditable element
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+          return;
+        }
+        e.preventDefault(); 
+        spacePressedRef.current = false; 
+        isPanningRef.current = false; 
+      } 
+    };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     // drag and drop image support

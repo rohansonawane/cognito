@@ -13,18 +13,28 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: CORS_ORIGIN
+        # Set this to your frontend URL(s), comma-separated
+        # For Netlify: https://your-site.netlify.app
+        # For Render static: https://cognito-web.onrender.com
+        # Or use "*" to allow all origins (less secure)
+        value: "*"
         sync: false
-      - key: RATE_LIMIT_PER_MIN
-        value: "120"
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "86400000"
+      - key: RATE_LIMIT_MAX
+        value: "10"
       - key: MAX_IMAGE_MB
         value: "8"
+      - key: PORT
+        value: "10000"
   - type: static
     name: cognito-web
     rootDir: web
     buildCommand: npm install && npm run build
     publishPath: dist
     envVars:
-      - key: SERVER_URL
+      - key: VITE_API_URL
+        # Set this to your backend URL
         value: https://cognito-api.onrender.com
     routes:
       - type: rewrite

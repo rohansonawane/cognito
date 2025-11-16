@@ -5,8 +5,12 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # Set this to your Render backend URL (e.g., https://cognito-api-zoi9.onrender.com)
+  # Or leave empty to use relative paths (redirects will handle it)
+  VITE_API_URL = ""
 
-# Redirect API calls to your hosted server (set SERVER_URL env var after deploy)
+# Redirect API calls to your hosted backend server
+# Update the URL below to match your Render backend URL
 [[redirects]]
   from = "/api/*"
   to = "https://cognito-api-zoi9.onrender.com/api/:splat"
@@ -19,3 +23,4 @@
     X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Access-Control-Allow-Origin = "*"
