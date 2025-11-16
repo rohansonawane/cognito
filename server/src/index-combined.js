@@ -17,6 +17,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false, // Disable CSP for now to allow scripts
 }));
 app.use(compression());
 app.use(cors({
@@ -76,19 +77,30 @@ app.post('/api/analyze', async (req, res) => {
 // Serve static files from web/dist (frontend)
 const webDistPath = join(__dirname, '../../web/dist');
 if (existsSync(webDistPath)) {
-  app.use(express.static(webDistPath));
+  // Serve static files (must be before catch-all route)
+  app.use(express.static(webDistPath, {
+    maxAge: '1d',
+    etag: true,
+    lastModified: true
+  }));
   
   // Serve index.html for all non-API routes (SPA routing)
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api')) {
-      const indexPath = join(webDistPath, 'index.html');
-      if (existsSync(indexPath)) {
-        res.sendFile(indexPath);
-      } else {
-        res.status(404).send('Frontend not built. Run "npm run build" in web/ directory.');
-      }
+  // This must be after static middleware
+  app.get('*', (req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    // Skip asset requests (they should be handled by static middleware)
+    if (req.path.startsWith('/assets/') || req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/)) {
+      return next();
+    }
+    // Serve index.html for all other routes (SPA)
+    const indexPath = join(webDistPath, 'index.html');
+    if (existsSync(indexPath)) {
+      res.sendFile(indexPath);
     } else {
-      res.status(404).json({ ok: false, error: 'Not found' });
+      res.status(404).send('Frontend not built. Run "npm run build" in web/ directory.');
     }
   });
 } else {

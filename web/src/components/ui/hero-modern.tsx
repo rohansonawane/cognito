@@ -306,7 +306,7 @@ function HeroOrbitDeck() {
       <header className="sticky top-3 z-50">
         <div className="mx-auto mb-4 w-auto flex max-w-[1440px] items-center justify-between gap-4 rounded-full border-0 px-5 py-3 shadow glass">
           <a href="/" className="flex items-center gap-3" aria-label="Cognito Home">
-            <img src="/src/assets/Logo.png" alt="Cognito" className="h-10 w-auto" />
+            <img src="/assets/Logo-Bz6l_H5O.png" alt="Cognito" className="h-10 w-auto" />
           </a>
           {isDesktop ? (
             <nav className="flex items-center gap-4 text-sm u-subtle">

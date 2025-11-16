@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { CanvasBoard, CanvasBoardRef, HistorySnapshot, type BrushKind } from './components/CanvasBoard';
 import { analyze } from './ai/api';
+import logoImage from './assets/Logo.png';
 import {
   Undo2,
   Redo2,
@@ -569,7 +570,7 @@ export default function App() {
       <header className="app-header">
         <div className="header-inner">
           <div className="brand">
-            <div className="brand-mark"><img src="/src/assets/Logo.png" alt="Cognito logo" /></div>
+            <div className="brand-mark"><img src={logoImage} alt="Cognito logo" /></div>
           </div>
           {isMobile ? (
             <div className="header-actions" style={{ display:'flex', gap:8 }}>
@@ -968,7 +969,7 @@ export default function App() {
               <div className="footer-brand">
                 <span className="footer-badge">Built for labs &amp; lecture halls</span>
                 <div className="footer-logo" aria-hidden="true">
-                  <img src="/src/assets/Logo.png" alt="Cognito logo" />
+                  <img src={logoImage} alt="Cognito logo" />
                 </div>
               <p className="footer-copy">
                 Sketch complex ideas, annotate experiments, and ship insights faster with an AI-native canvas
