@@ -6,10 +6,11 @@ type Props = {
   swatches?: string[];
   inlineHex?: boolean;
   defaultOpen?: boolean;
+  inline?: boolean;
 };
 
-export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = false, defaultOpen = false }: Props) {
-  const [open, setOpen] = useState(defaultOpen);
+export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = false, defaultOpen = false, inline = false }: Props) {
+  const [open, setOpen] = useState(defaultOpen || inline);
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -35,6 +36,45 @@ export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = 
       document.removeEventListener('touchstart', onDoc);
     };
   }, [open]);
+
+  if (inline) {
+    return (
+      <div className="color-popper color-popper-inline" ref={ref}>
+        <div className="color-row">
+          {swatches.map((c) => (
+            <button 
+              key={c} 
+              className={`swatch ${value===c?'selected':''}`} 
+              style={{ background: c }} 
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onChange(c);
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onChange(c);
+              }}
+              title={c} 
+            />
+          ))}
+        </div>
+        <div className="color-custom" style={{ marginTop: 8 }}>
+          <input 
+            type="color" 
+            value={value} 
+            onChange={(e) => onChange(e.target.value)} 
+          />
+          <input 
+            className="hex-input" 
+            value={value.toUpperCase()} 
+            onChange={(e) => onChange(normalizeHex(e.target.value))} 
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="color-popper" ref={ref}>
