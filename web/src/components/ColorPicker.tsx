@@ -27,22 +27,42 @@ export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = 
       const scrollY = window.scrollY;
       const scrollX = window.scrollX;
       
-      // Check if button is inside side panel
+      // Check if button is inside side panel or tools sidebar
       let sidePanelElement: HTMLElement | null = null;
+      let toolsElement: HTMLElement | null = null;
       let currentElement: HTMLElement | null = buttonRef.current.parentElement;
       while (currentElement) {
         if (currentElement.classList.contains('side-panel')) {
           sidePanelElement = currentElement;
-          break;
         }
+        if (currentElement.classList.contains('tools')) {
+          toolsElement = currentElement;
+        }
+        if (sidePanelElement && toolsElement) break;
         currentElement = currentElement.parentElement;
       }
       
       let left = rect.left + scrollX;
       let top = rect.bottom + scrollY + 8;
       
-      // If button is in side panel, position popup to the left of side panel
-      if (sidePanelElement) {
+      // If button is in tools sidebar, position popup to the right of tools
+      if (toolsElement) {
+        const toolsRect = toolsElement.getBoundingClientRect();
+        // Position to the right of the tools sidebar
+        left = toolsRect.right + scrollX + 16;
+        // If not enough space on right, position to the left
+        if (left + panelWidth > scrollX + viewportWidth - 16) {
+          left = toolsRect.left + scrollX - panelWidth - 16;
+          // If still not enough space, center it
+          if (left < scrollX + 16) {
+            left = scrollX + (viewportWidth / 2) - (panelWidth / 2);
+            left = Math.max(16, Math.min(left, scrollX + viewportWidth - panelWidth - 16));
+          }
+        }
+        // Align vertically with button
+        top = rect.top + scrollY;
+      } else if (sidePanelElement) {
+        // If button is in side panel, position popup to the left of side panel
         const sidePanelRect = sidePanelElement.getBoundingClientRect();
         // Position to the left of the side panel
         left = sidePanelRect.left + scrollX - panelWidth - 16;
