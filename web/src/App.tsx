@@ -665,7 +665,7 @@ export default function App() {
               )}
               {activeMobilePanel==='color' && (
                 <div className="mobile-panel" style={{ marginTop:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <ColorPicker value={color} onChange={setColor} swatches={colors} />
+                  <ColorPicker value={color} onChange={setColor} swatches={colors} defaultOpen={true} />
                 </div>
               )}
               {activeMobilePanel==='size' && (
