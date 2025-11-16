@@ -160,6 +160,47 @@ The static build uses `window.APP_CONFIG.aiEndpoint` from `app.js`; set it if yo
 
 You can adapt similar settings for Vercel, Cloudflare Pages, or any static hosting service by forwarding `/api/*` to the proxy.
 
+### AWS EC2 (Secure .env Management)
+For secure deployment on AWS EC2, use AWS Secrets Manager to manage environment variables:
+
+**Setup Steps:**
+
+1. **Create secret in AWS Secrets Manager:**
+   ```bash
+   # Upload secrets from local .env file
+   ./scripts/upload-secret-to-aws.sh
+   
+   # Or create manually
+   aws secretsmanager create-secret \
+     --name Environment_Key \
+     --secret-string '{"OPENAI_API_KEY":"your_key","GEMINI_API_KEY":"your_key"}'
+   ```
+
+2. **Attach IAM role to EC2 instance:**
+   - IAM Console → Roles → Create Role → EC2
+   - Attach policy: `SecretsManagerReadWrite`
+   - Attach role to your EC2 instance
+
+3. **Deploy to EC2:**
+   ```bash
+   # Automated deployment
+   ./scripts/deploy-to-aws-ec2.sh
+   
+   # Or manual setup
+   ./setup-ec2-secure.sh
+   ```
+
+**Available Scripts:**
+- `setup-ec2-secure.sh` - Automated EC2 setup with secret loading
+- `scripts/upload-secret-to-aws.sh` - Upload .env to AWS Secrets Manager
+- `scripts/deploy-to-aws-ec2.sh` - Deploy application to EC2
+- `server/scripts/load-secrets.js` - Load secrets from AWS Secrets Manager (runs automatically on EC2)
+
+**Security:**
+- Secrets encrypted at rest in AWS Secrets Manager
+- No credentials stored on EC2 (uses IAM roles)
+- Never commit `.env` files to Git
+
 ## Using the Canvas
 
 ### Tools & interactions
