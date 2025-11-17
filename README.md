@@ -28,30 +28,7 @@
 | **Zero-config local dev** | `npm run dev` for the frontend, `npm run dev` for the server—no monorepo gymnastics. |
 | **Production ready** | Secure Express API with rate limiting, CORS, dotenv, and deploy scripts for AWS, Render, Netlify, etc. |
 
-## 📊 Snapshot Dashboard
-
-| Metric | Value |
-| --- | --- |
-| Supported tools | 18 brushes/shapes + smart text |
-| AI providers | OpenAI GPT-4o-mini, Google Gemini 1.5 Flash |
-| Max canvas size | Unlimited (vector history with streaming) |
-| Undo capacity | 60 named snapshots (configurable) |
-| Default rate limit | 10 requests / 24h / IP |
-| Supported deploy targets | AWS EC2, Netlify, Render, Vercel, Railway, Fly.io |
-
-### KPI Mini-Graph
-
-```
-Daily AI Calls
-25 | ██████████████████
-20 | ███████████████
-15 | ██████████
-10 | ███████
- 5 | ████
- 0 | 
-```
-
-(Numbers represent typical usage during internal testing.)
+> **Prototype status:** this is our first public prototype. Expect rapid iterations, UI/UX polish, and frequent new features based on community feedback.
 
 ## 📸 Screenshots
 
@@ -115,6 +92,36 @@ sequenceDiagram
 ```
 
 </details>
+
+## 🔭 Future Roadmap
+
+We’re actively shaping Cognito, and the following upgrades are on deck:
+
+- 🎨 **Better UI/UX**: refined toolbars, accessible color themes, collaborative cursors.
+- 🧠 **More LLMs**: plug in additional hosted or local models (Llama, Mistral, custom fine-tunes).
+- ⚡ **Performance**: leaner rendering pipeline, smarter caching, lower memory footprint.
+- 👤 **User accounts & dashboards**: personal spaces, saved canvases, analytics, and sharing controls.
+- 📓 **Notebooks**: structured collections where users can save boards, reflections, and AI responses.
+- 📱 **Native apps**: Android & iOS builds via Expo for offline-friendly sketching.
+- 🔒 **Security & compliance**: granular roles, audit logs, encryption at rest, SSO options.
+- 🗂 **Document workflows**: upload PDFs/notes, annotate them, run AI analyses with citations to supplied files.
+- 🧷 **Knowledge grounding**: “reference packs” so AI answers cite the documents or lessons you attach.
+- 🧾 **Learning insights**: personalized suggestions as the system learns from user patterns (opt-in).
+- 🔁 **Sharing & sorting**: categories, tags, and smart filters so teachers can distribute sets of notes to a class.
+- 🎓 **Classroom mode**: teachers broadcast boards to students, collect submissions, or review collaboratively.
+- 🕶 **Immersive whiteboarding**: experimental VR workspace for live sketching in 3D classrooms.
+- 🧱 **Bring-your-own LLM**: run Cognito against your self-hosted or on-prem model for full data control.
+
+If any of these excite you, feel free to open an issue or PR to help shape them!
+
+## 📚 Use Cases & Integrations
+
+- **Student note-taking companion**: Embed Cognito into your LMS or classroom portal so students can take handwritten notes, annotate diagrams, and query AI without switching tabs.
+- **Team knowledge canvas**: Product and engineering teams can brainstorm flows, mark up screenshots, then capture AI-generated summaries to share.
+- **Document overlay (coming soon)**: Drop PDFs or slides, write directly on top, and send context to AI—including references so answers stay grounded in provided material.
+- **Learning systems**: Cognito can learn from user sessions (with consent) to tailor prompts, suggest templates, and recommend next steps.
+- **Sharing & organization**: Notes can be shared with classmates, teachers, or teammates with categories, tags, and date filters for easy retrieval.
+- **Extended platforms**: Roadmap includes teacher broadcast mode, VR collaboration, mobile apps, and optional on-device or self-hosted LLMs for privacy-first deployments.
 
 ## ✨ Features
 
@@ -237,10 +244,10 @@ sequenceDiagram
 - **GitHub Actions** - CI/CD (optional)
 
 ## 📋 Table of Contents
-- [Overview](#overview)
-- [Snapshot Dashboard](#-snapshot-dashboard)
+- [Overview](#-overview)
 - [Architecture Overview](#-architecture-overview)
 - [Screenshots](#-screenshots)
+- [Use Cases & Integrations](#-use-cases--integrations)
 - [Features](#-features)
 - [Tech Stack](#️-tech-stack)
 - [Quick Start](#-quick-start)
@@ -248,6 +255,7 @@ sequenceDiagram
 - [Configuration](#-configuration)
 - [Deployment](#-deployment)
 - [Usage Guide](#-usage-guide)
+- [Future Roadmap](#-future-roadmap)
 - [API Reference](#-api-reference)
 - [Security](#-security)
 - [Contributing](#-contributing)
@@ -556,23 +564,17 @@ Analyze an image with AI.
 
 ## 🤝 Contributing
 
-<details>
-<summary><strong>Expand contributing guidelines</strong></summary>
+We love collaborating with educators, engineers, and curious makers. Here’s how you can help:
 
-Contributions are welcome! Please follow these steps:
+- **Issues**: Spot a bug, rough edge, or idea? Open an issue with as much detail as possible.
+- **Pull requests**: Fork the repo, create a feature branch (`git checkout -b feature/awesome`), commit, and open a PR. Screenshots or Loom demos are extra helpful.
+- **Discussions**: Not sure where something fits? Start a discussion or drop a note in the relevant issue.
+- **Docs & translations**: Improve guides, translate UI copy, or add tutorials—documentation PRs are always welcome.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+### Code of Conduct
 
-### Development Guidelines
-- Follow TypeScript best practices
-- Write meaningful commit messages
-- Test on multiple browsers/devices
-- Update documentation for new features
-</details>
+Please help us keep the community welcoming. Be respectful, assume good intent, and avoid harassment or discrimination of any kind. By contributing, you agree to follow our Code of Conduct (if you don’t see `CODE_OF_CONDUCT.md` yet, treat this section as our interim pledge—one is on the roadmap).
+
 
 ## 📄 License
 
