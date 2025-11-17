@@ -95,24 +95,24 @@ sequenceDiagram
 
 ## 🔭 Future Roadmap
 
-We’re actively shaping Cognito, and the following upgrades are on deck:
+| Initiative | Description | Status |
+| --- | --- | --- |
+| UI/UX Evolution | Redesign toolbars, improve accessibility, add collaborative cursors | In planning |
+| Expanded LLM Catalog | Support Llama, Mistral, local deployments, and custom fine-tunes | In planning |
+| Performance & Efficiency | Optimize rendering, caching, and memory footprint for large boards | In planning |
+| Accounts & Dashboards | User profiles, analytics, saved canvases, organization controls | In planning |
+| Cognito Notebooks | Persistent notebooks for storing boards, AI responses, and reflections | In planning |
+| Native Mobile Apps | First-party Android/iOS clients with offline mode and pen support | In planning |
+| Security & Compliance | Roles, SSO, audit logs, encryption at rest, enterprise readiness | In planning |
+| Document Workbench | Annotate PDFs/notes, attach them as sources, cite references in AI output | In planning |
+| Knowledge Grounding | Custom “reference packs” so AI answers stay within provided context | In planning |
+| Learning Intelligence | Personalized suggestions as the system learns (opt-in) from usage patterns | In planning |
+| Sharing & Organization | Categories, tags, and filters for distributing notes to classes or teams | In planning |
+| Classroom Mode | Allow teachers to broadcast boards, collect submissions, and review collaboratively | In planning |
+| Immersive/VR Whiteboard | Experimental 3D collaboration for labs and design studios | Under research |
+| Bring-Your-Own LLM | Self-hosted or on-prem LLM integration for full data control | In planning |
 
-- 🎨 **Better UI/UX**: refined toolbars, accessible color themes, collaborative cursors.
-- 🧠 **More LLMs**: plug in additional hosted or local models (Llama, Mistral, custom fine-tunes).
-- ⚡ **Performance**: leaner rendering pipeline, smarter caching, lower memory footprint.
-- 👤 **User accounts & dashboards**: personal spaces, saved canvases, analytics, and sharing controls.
-- 📓 **Notebooks**: structured collections where users can save boards, reflections, and AI responses.
-- 📱 **Native apps**: Android & iOS builds via Expo for offline-friendly sketching.
-- 🔒 **Security & compliance**: granular roles, audit logs, encryption at rest, SSO options.
-- 🗂 **Document workflows**: upload PDFs/notes, annotate them, run AI analyses with citations to supplied files.
-- 🧷 **Knowledge grounding**: “reference packs” so AI answers cite the documents or lessons you attach.
-- 🧾 **Learning insights**: personalized suggestions as the system learns from user patterns (opt-in).
-- 🔁 **Sharing & sorting**: categories, tags, and smart filters so teachers can distribute sets of notes to a class.
-- 🎓 **Classroom mode**: teachers broadcast boards to students, collect submissions, or review collaboratively.
-- 🕶 **Immersive whiteboarding**: experimental VR workspace for live sketching in 3D classrooms.
-- 🧱 **Bring-your-own LLM**: run Cognito against your self-hosted or on-prem model for full data control.
-
-If any of these excite you, feel free to open an issue or PR to help shape them!
+Have an idea or want to drive one of these initiatives? Open an issue or reach out—we’d love to collaborate.
 
 ## 📚 Use Cases & Integrations
 
