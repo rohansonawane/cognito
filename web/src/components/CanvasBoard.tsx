@@ -1212,7 +1212,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     switch (b) {
       case 'marker': ctx.globalAlpha = 0.85; width = sizeRef.current * 1.2 * pressure; break;
       case 'highlighter': ctx.globalAlpha = 0.35; ctx.globalCompositeOperation = 'multiply'; width = sizeRef.current * 1.6 * pressure; break;
-      case 'eraser': ctx.globalCompositeOperation = 'destination-out'; width = sizeRef.current * 1.4 * pressure; break;
+      case 'eraser': ctx.globalCompositeOperation = 'destination-out'; width = sizeRef.current * 2.5 * pressure; break;
       default: ctx.globalAlpha = 0.95; width = sizeRef.current * pressure; break;
     }
     ctx.lineWidth = Math.max(1, width);
@@ -1408,7 +1408,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     ctxO.globalCompositeOperation = mode==='eraser' ? 'destination-out':'source-over';
     ctxO.globalAlpha = mode==='highlighter'?0.35:mode==='marker'?0.85:0.95;
     ctxO.strokeStyle = mode==='eraser' ? 'rgba(0,0,0,1)':colorRef.current;
-    ctxO.lineWidth = Math.max(1, (sizeRef.current / z) * dpr);
+    const eraserMultiplier = mode === 'eraser' ? 2.5 : 1;
+    ctxO.lineWidth = Math.max(1, (sizeRef.current / z) * dpr * eraserMultiplier);
     ctxO.beginPath();
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[i - 1] || pts[i];
@@ -1455,7 +1456,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       switch (mode) {
         case 'marker': return sizeRef.current * 1.2;
         case 'highlighter': return sizeRef.current * 1.6;
-        case 'eraser': return sizeRef.current * 1.4;
+        case 'eraser': return sizeRef.current * 2.5;
         default: return sizeRef.current;
       }
     })();
@@ -1661,7 +1662,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       ctx.globalCompositeOperation = s.mode==='eraser' ? 'destination-out' : 'source-over';
       ctx.globalAlpha = s.mode==='highlighter'?0.35:s.mode==='marker'?0.85:0.95;
       ctx.strokeStyle = s.mode==='eraser' ? 'rgba(0,0,0,1)' : s.color;
-      ctx.lineWidth = Math.max(1, s.size / z);
+      const eraserMultiplier = s.mode === 'eraser' ? 2.5 : 1;
+      ctx.lineWidth = Math.max(1, (s.size / z) * eraserMultiplier);
       const pts = s.points; if (pts.length<2) continue;
       ctx.beginPath();
       ctx.lineJoin='round'; ctx.lineCap='round';
