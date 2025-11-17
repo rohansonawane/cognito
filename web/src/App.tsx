@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { CanvasBoard, CanvasBoardRef, HistorySnapshot, type BrushKind } from './components/CanvasBoard';
+import { CanvasBoard, CanvasBoardRef, HistorySnapshot, type BrushKind, type CanvasTextField } from './components/CanvasBoard';
 import { analyze } from './ai/api';
 import logoImage from './assets/Logo.png';
 import {
@@ -101,6 +101,11 @@ type Provider = 'openai' | 'gemini';
 
 export default function App() {
   const boardRef = useRef<CanvasBoardRef>(null);
+  const TEXT_FIELD_WIDTH_MIN = 80;
+  const TEXT_FIELD_WIDTH_MAX = 800;
+  const TEXT_FIELD_HEIGHT_MIN = 40;
+  const TEXT_FIELD_HEIGHT_MAX = 600;
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
   const [brush, setBrush] = useState<BrushKind>('brush');
   const [size, setSize] = useState(8);
@@ -127,6 +132,7 @@ export default function App() {
   const [historyLabel, setHistoryLabel] = useState('');
   const [showGrid, setShowGrid] = useState(false);
   const [activeHowCard, setActiveHowCard] = useState<string>('quick');
+  const [selectedTextField, setSelectedTextField] = useState<CanvasTextField | null>(null);
   const currentYear = new Date().getFullYear();
   type BrushOption = {
     key: BrushKind;
@@ -513,6 +519,32 @@ export default function App() {
     []
   );
 
+  const handleTextFieldChange = React.useCallback((field: CanvasTextField | null) => {
+    setSelectedTextField(field);
+  }, []);
+
+  const handleWidthSliderChange = (value: number) => {
+    const clampedValue = clamp(value, TEXT_FIELD_WIDTH_MIN, TEXT_FIELD_WIDTH_MAX);
+    boardRef.current?.resizeSelectedTextField?.({ width: clampedValue });
+  };
+
+  const handleWidthSliderCommit = () => {
+    if (!selectedTextField) return;
+    const clampedValue = clamp(selectedTextField.width, TEXT_FIELD_WIDTH_MIN, TEXT_FIELD_WIDTH_MAX);
+    boardRef.current?.resizeSelectedTextField?.({ width: clampedValue }, { commit: true });
+  };
+
+  const handleHeightSliderChange = (value: number) => {
+    const clampedValue = clamp(value, TEXT_FIELD_HEIGHT_MIN, TEXT_FIELD_HEIGHT_MAX);
+    boardRef.current?.resizeSelectedTextField?.({ height: clampedValue });
+  };
+
+  const handleHeightSliderCommit = () => {
+    if (!selectedTextField) return;
+    const clampedValue = clamp(selectedTextField.height, TEXT_FIELD_HEIGHT_MIN, TEXT_FIELD_HEIGHT_MAX);
+    boardRef.current?.resizeSelectedTextField?.({ height: clampedValue }, { commit: true });
+  };
+
   async function onAnalyze() {
     // client-side soft quota: 10 requests / 24h per browser
     try {
@@ -670,6 +702,48 @@ export default function App() {
                 <div className="mobile-panel" style={{ marginTop:8, display:'flex', flexDirection:'column', alignItems:'center' }}>
                   <label className="tool-label">Size <span id="size-value">{size}</span>px</label>
                   <SizeControl value={size} onChange={(n) => setSize(n)} min={1} max={64} />
+                  {(brush === 'text' || selectedTextField) && (
+                    <div style={{ width: '100%', marginTop:12 }}>
+                      {selectedTextField ? (
+                        <>
+                          <div className="text-size-control">
+                            <div className="text-size-meta">
+                              <span>Width</span>
+                              <span>{Math.round(selectedTextField.width)} px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={TEXT_FIELD_WIDTH_MIN}
+                              max={TEXT_FIELD_WIDTH_MAX}
+                              value={clamp(Math.round(selectedTextField.width), TEXT_FIELD_WIDTH_MIN, TEXT_FIELD_WIDTH_MAX)}
+                              onChange={(e) => handleWidthSliderChange(Number(e.target.value))}
+                              onMouseUp={handleWidthSliderCommit}
+                              onTouchEnd={handleWidthSliderCommit}
+                              className="size-slider"
+                            />
+                          </div>
+                          <div className="text-size-control">
+                            <div className="text-size-meta">
+                              <span>Height</span>
+                              <span>{Math.round(selectedTextField.height)} px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={TEXT_FIELD_HEIGHT_MIN}
+                              max={TEXT_FIELD_HEIGHT_MAX}
+                              value={clamp(Math.round(selectedTextField.height), TEXT_FIELD_HEIGHT_MIN, TEXT_FIELD_HEIGHT_MAX)}
+                              onChange={(e) => handleHeightSliderChange(Number(e.target.value))}
+                              onMouseUp={handleHeightSliderCommit}
+                              onTouchEnd={handleHeightSliderCommit}
+                              className="size-slider"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <p className="tool-hint" style={{ textAlign:'center' }}>Select a text field to adjust its width and height.</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -724,6 +798,49 @@ export default function App() {
                 <label className="tool-label">Size <span id="size-value">{size}</span>px</label>
                 <SizeControl value={size} onChange={(n) => setSize(n)} min={1} max={64} />
               </div>
+              {(brush === 'text' || selectedTextField) && (
+                <div className="tool-group">
+                  <label className="tool-label">Text Field Size</label>
+                  {selectedTextField ? (
+                    <>
+                      <div className="text-size-control">
+                        <div className="text-size-meta">
+                          <span>Width</span>
+                          <span>{Math.round(selectedTextField.width)} px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={TEXT_FIELD_WIDTH_MIN}
+                          max={TEXT_FIELD_WIDTH_MAX}
+                          value={clamp(Math.round(selectedTextField.width), TEXT_FIELD_WIDTH_MIN, TEXT_FIELD_WIDTH_MAX)}
+                          onChange={(e) => handleWidthSliderChange(Number(e.target.value))}
+                          onMouseUp={handleWidthSliderCommit}
+                          onTouchEnd={handleWidthSliderCommit}
+                          className="size-slider"
+                        />
+                      </div>
+                      <div className="text-size-control">
+                        <div className="text-size-meta">
+                          <span>Height</span>
+                          <span>{Math.round(selectedTextField.height)} px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={TEXT_FIELD_HEIGHT_MIN}
+                          max={TEXT_FIELD_HEIGHT_MAX}
+                          value={clamp(Math.round(selectedTextField.height), TEXT_FIELD_HEIGHT_MIN, TEXT_FIELD_HEIGHT_MAX)}
+                          onChange={(e) => handleHeightSliderChange(Number(e.target.value))}
+                          onMouseUp={handleHeightSliderCommit}
+                          onTouchEnd={handleHeightSliderCommit}
+                          className="size-slider"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <p className="tool-hint">Select a text field to adjust its width and height.</p>
+                  )}
+                </div>
+              )}
             </>
           )}
         </aside>
@@ -749,6 +866,7 @@ export default function App() {
             size={size}
             onHistoryUpdate={handleHistoryUpdate}
             showGrid={showGrid}
+            onTextFieldChange={handleTextFieldChange}
           />
           <div className="canvas-overlay">
             <div className="overlay-row">

@@ -196,6 +196,10 @@ input.hex-input { height: 30px; }
 .tools .segmented { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .tool-group { display:flex; flex-direction:column; gap:0.75rem; }
 .tool-label { color:var(--color-text-secondary); font-size:0.85rem; }
+.tool-hint { font-size:0.8rem; color:var(--color-text-secondary); margin-top:-0.25rem; }
+.text-size-control { width:100%; }
+.text-size-control + .text-size-control { margin-top:0.85rem; }
+.text-size-meta { display:flex; justify-content:space-between; font-size:0.78rem; color:var(--color-text-secondary); margin-bottom:0.35rem; }
 .segmented { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); background: var(--color-surface); border:none; border-radius:12px; overflow:hidden; gap:4px; padding:0; }
 .segmented.brush-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
 .segmented-item { background: var(--color-surface); color:var(--color-text); border:1px solid var(--color-border); padding:6px 10px; cursor:pointer; transition: background var(--transition), transform var(--transition), box-shadow var(--transition), border-color var(--transition); border-radius:10px; height:auto; min-height:34px; display:grid; place-items:center; font-size:16px; line-height:1; }

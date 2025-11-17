@@ -18,6 +18,16 @@
 
 </div>
 
+## 🚀 Highlights
+
+| What | Why it matters |
+| --- | --- |
+| **All-in-one AI canvas** | Draw freehand, drop shapes, or paste screenshots—then ask OpenAI or Gemini to explain, summarise, or solve problems directly on the board. |
+| **Smart text blocks** | Create, move, resize, and live-edit text fields with auto-wrapping and keyboard shortcuts, just like a design tool. |
+| **Time-travel history** | Unlimited undo/redo, named snapshots, and a visual timeline so experimentation is frictionless. |
+| **Zero-config local dev** | `npm run dev` for the frontend, `npm run dev` for the server—no monorepo gymnastics. |
+| **Production ready** | Secure Express API with rate limiting, CORS, dotenv, and deploy scripts for AWS, Render, Netlify, etc. |
+
 ## 📸 Screenshots
 
 <div align="center">
@@ -40,6 +50,7 @@
 - **Multi-layer Canvas System** - Background, drawing, and overlay layers for complex compositions
 - **Brush Tools** - Brush, Marker, Highlighter, and Eraser with adjustable size (1-64px)
 - **Shape Tools** - Line, Rectangle, Ellipse, Arrow, Double Arrow, Triangle, Diamond, Hexagon
+- **Smart Text Fields** - Add, move, resize, edit, and auto-wrap text blocks with resize handles *or* sidebar sliders
 - **Custom Color Picker** - Full color palette with custom color selection
 - **Pressure Sensitivity** - Support for pressure-sensitive input devices
 - **Smooth Stroke Rendering** - Optimized canvas rendering with anti-aliasing
@@ -157,6 +168,15 @@ AI Canvas Lab (codename Cognito) is a cross-platform whiteboard application that
 - Node.js ≥ 20
 - npm ≥ 10
 - OpenAI API key and/or Google Gemini API key
+
+> **TL;DR**
+> ```bash
+> git clone https://github.com/rohansonawane/cognito.git
+> cd cognito
+> (cd server && npm install && cp .env.example .env && npm run dev)
+> (cd web && npm install && npm run dev)
+> ```
+> Visit **http://localhost:5173** and start sketching.
 
 ### 1. Clone the Repository
 ```bash

@@ -30,6 +30,8 @@ export type CanvasBoardRef = {
   getHistoryTimeline?: () => HistorySnapshot[];
   jumpToHistory?: (entryId: string) => void;
   deleteHistorySnapshot?: (entryId: string) => void;
+  getSelectedTextField?: () => CanvasTextField | null;
+  resizeSelectedTextField?: (size: { width?: number; height?: number }, options?: { commit?: boolean }) => void;
 };
 
 export type ShapeKind = 'line' | 'rect' | 'ellipse' | 'arrow' | 'double-arrow' | 'triangle' | 'diamond' | 'hexagon';
@@ -42,6 +44,7 @@ type Props = {
   onHistoryUpdate?: (timeline: HistorySnapshot[]) => void;
   showGrid?: boolean;
   gridSize?: number;
+  onTextFieldChange?: (field: CanvasTextField | null) => void;
 };
 
 const MAX_HISTORY = 60;
@@ -69,11 +72,22 @@ type TextField = {
   fontSize: number;
 };
 
+export type CanvasTextField = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  color: string;
+  fontSize: number;
+};
+
 const SHAPE_KINDS: ShapeKind[] = ['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon'];
 const SHAPE_SET = new Set<ShapeKind>(SHAPE_KINDS);
 const isShapeBrush = (mode: BrushKind): mode is ShapeKind => SHAPE_SET.has(mode as ShapeKind);
 
-export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, size, onHistoryUpdate, showGrid = false, gridSize = 24 }, ref) => {
+export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, size, onHistoryUpdate, showGrid = false, gridSize = 24, onTextFieldChange }, ref) => {
   const bgRef = useRef<HTMLCanvasElement | null>(null);
   const gridRef = useRef<HTMLCanvasElement | null>(null);
   const drawRef = useRef<HTMLCanvasElement | null>(null);
@@ -102,20 +116,287 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const strokesRef = useRef<Stroke[]>([]);
   const textFieldsRef = useRef<TextField[]>([]);
   const editingTextFieldRef = useRef<string | null>(null);
+  const selectedTextFieldRef = useRef<string | null>(null);
   const resizingTextFieldRef = useRef<{id: string; handle: 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's'} | null>(null);
   const draggingTextFieldRef = useRef<string | null>(null);
   const textFieldDragOffsetRef = useRef<{x: number; y: number} | null>(null);
   const textInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const measureCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const pointersRef = useRef<Map<number, {x:number;y:number}>>(new Map());
   const pinchStartRef = useRef<{dist:number; center:{x:number;y:number}; pan:{x:number;y:number}; zoom:number} | null>(null);
   const spacePressedRef = useRef<boolean>(false);
   const showGridRef = useRef<boolean>(showGrid);
   const gridSizeRef = useRef<number>(gridSize);
   const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
+  const onTextFieldChangeRef = useRef(onTextFieldChange);
+  useEffect(() => {
+    onTextFieldChangeRef.current = onTextFieldChange;
+  }, [onTextFieldChange]);
 
-  const updateCursor = () => {
+  const cloneTextField = (field: TextField): CanvasTextField => ({
+    id: field.id,
+    x: field.x,
+    y: field.y,
+    width: field.width,
+    height: field.height,
+    text: field.text,
+    color: field.color,
+    fontSize: field.fontSize,
+  });
+
+  const findSelectedTextField = (): TextField | null => {
+    const id = selectedTextFieldRef.current;
+    if (!id) return null;
+    return textFieldsRef.current.find((f) => f.id === id) || null;
+  };
+
+  const notifySelectedTextField = () => {
+    const cb = onTextFieldChangeRef.current;
+    if (!cb) return;
+    const field = findSelectedTextField();
+    cb(field ? cloneTextField(field) : null);
+  };
+
+  const getMeasureContext = () => {
+    if (!measureCtxRef.current) {
+      const canvas = document.createElement('canvas');
+      measureCtxRef.current = canvas.getContext('2d');
+    }
+    return measureCtxRef.current || ctxRef.current || null;
+  };
+
+  const getWrappedTextLines = (field: TextField, widthOverride?: number): string[] => {
+    const text = field.text || '';
+    if (!text) return [];
+    const ctx = getMeasureContext();
+    if (!ctx) return [text];
+    ctx.font = `${field.fontSize}px sans-serif`;
+    const maxWidth = Math.max(4, (widthOverride ?? field.width) - 4);
+    const paragraphs = text.split(/\r?\n/);
+    const lines: string[] = [];
+
+    const flushLine = (line: string) => {
+      lines.push(line);
+    };
+
+    const breakLongWord = (word: string) => {
+      if (!word) return [''];
+      const chunks: string[] = [];
+      let current = '';
+      for (const char of word) {
+        const test = current + char;
+        if (ctx.measureText(test).width > maxWidth && current) {
+          chunks.push(current);
+          current = char;
+        } else {
+          current = test;
+        }
+      }
+      if (current) chunks.push(current);
+      return chunks;
+    };
+
+    for (const paragraph of paragraphs) {
+      const words = paragraph.length ? paragraph.split(' ') : [''];
+      let currentLine = '';
+      for (const word of words) {
+        const candidate = currentLine ? `${currentLine} ${word}` : word;
+        if (ctx.measureText(candidate).width > maxWidth) {
+          if (currentLine) {
+            flushLine(currentLine);
+            currentLine = '';
+          }
+          const broken = breakLongWord(word);
+          while (broken.length > 1) {
+            flushLine(broken.shift()!);
+          }
+          currentLine = broken.pop() || '';
+        } else {
+          currentLine = candidate;
+        }
+      }
+      flushLine(currentLine);
+    }
+
+    return lines;
+  };
+
+  const autoResizeFieldHeight = (field: TextField, options?: { enforceMinOnly?: boolean }): boolean => {
+    const lines = getWrappedTextLines(field);
+    const lineCount = Math.max(1, lines.length || (field.text ? 1 : 0));
+    const lineHeight = field.fontSize * 1.2;
+    const minHeight = field.fontSize * 1.5;
+    const requiredHeight = Math.max(minHeight, lineCount * lineHeight + 4);
+    const nextHeight = options?.enforceMinOnly ? Math.max(field.height, requiredHeight) : requiredHeight;
+    if (Math.abs(nextHeight - field.height) > 0.5) {
+      field.height = nextHeight;
+      return true;
+    }
+    return false;
+  };
+
+  const resizeSelectedField = (size: { width?: number; height?: number } = {}, options?: { commit?: boolean }) => {
+    const field = findSelectedTextField();
+    if (!field) return;
+    let changed = false;
+    let widthChanged = false;
+    let heightChanged = false;
+    if (typeof size.width === 'number' && Number.isFinite(size.width)) {
+      const nextWidth = Math.max(50, size.width);
+      if (Math.abs(nextWidth - field.width) > 0.1) {
+        field.width = nextWidth;
+        changed = true;
+        widthChanged = true;
+      }
+    }
+    if (typeof size.height === 'number' && Number.isFinite(size.height)) {
+      const nextHeight = Math.max(20, size.height);
+      if (Math.abs(nextHeight - field.height) > 0.1) {
+        field.height = nextHeight;
+        changed = true;
+        heightChanged = true;
+      }
+    }
+    if (widthChanged) {
+      if (autoResizeFieldHeight(field, { enforceMinOnly: heightChanged })) {
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    updateTextInputPosition();
+    renderAll();
+    notifySelectedTextField();
+    if (options?.commit) {
+      pushHistory();
+    }
+  };
+
+  function getTextFieldAtPoint(x: number, y: number): { field: TextField; handle?: 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's' } | null {
+    const z = zoomRef.current || 1;
+    const pan = panRef.current;
+    const worldX = (x - pan.x) / z;
+    const worldY = (y - pan.y) / z;
+    const handleSize = 10 / z; // Slightly larger for easier clicking
+    
+    for (const field of textFieldsRef.current) {
+      const left = field.x;
+      const top = field.y;
+      const right = field.x + field.width;
+      const bottom = field.y + field.height;
+      
+      // First check if inside the field (excluding handle areas)
+      const isInside = worldX >= left && worldX <= right && worldY >= top && worldY <= bottom;
+      
+      if (isInside) {
+        // Check resize handles (handles take priority if clicked directly on them)
+        // Corner handles
+        if (worldX >= right - handleSize && worldY >= bottom - handleSize) {
+          return { field, handle: 'se' };
+        }
+        if (worldX <= left + handleSize && worldY >= bottom - handleSize) {
+          return { field, handle: 'sw' };
+        }
+        if (worldX >= right - handleSize && worldY <= top + handleSize) {
+          return { field, handle: 'ne' };
+        }
+        if (worldX <= left + handleSize && worldY <= top + handleSize) {
+          return { field, handle: 'nw' };
+        }
+        // Edge handles (only if not in corner)
+        if (worldX >= right - handleSize && worldY > top + handleSize && worldY < bottom - handleSize) {
+          return { field, handle: 'e' };
+        }
+        if (worldX <= left + handleSize && worldY > top + handleSize && worldY < bottom - handleSize) {
+          return { field, handle: 'w' };
+        }
+        if (worldY <= top + handleSize && worldX > left + handleSize && worldX < right - handleSize) {
+          return { field, handle: 'n' };
+        }
+        if (worldY >= bottom - handleSize && worldX > left + handleSize && worldX < right - handleSize) {
+          return { field, handle: 's' };
+        }
+        
+        // Inside field but not on a handle
+        return { field };
+      }
+    }
+    return null;
+  }
+
+  const updateCursor = (x?: number, y?: number) => {
     const hit = hitRef.current;
     if (!hit) return;
+    
+    // If resizing, show appropriate resize cursor
+    if (resizingTextFieldRef.current) {
+      const handle = resizingTextFieldRef.current.handle;
+      const cursorMap: Record<string, string> = {
+        'nw': 'nwse-resize',
+        'ne': 'nesw-resize',
+        'sw': 'nesw-resize',
+        'se': 'nwse-resize',
+        'n': 'n-resize',
+        's': 's-resize',
+        'e': 'e-resize',
+        'w': 'w-resize'
+      };
+      hit.style.cursor = cursorMap[handle] || 'default';
+      return;
+    }
+    
+    // If dragging, show move cursor
+    if (draggingTextFieldRef.current) {
+      hit.style.cursor = 'move';
+      return;
+    }
+    
+    // Check what we're hovering over
+    if (x !== undefined && y !== undefined) {
+      const hit = getTextFieldAtPoint(x, y);
+      
+      if (hit && hit.field) {
+        // Check if hovering over delete button
+        const z = zoomRef.current || 1;
+        const pan = panRef.current;
+        const worldX = (x - pan.x) / z;
+        const worldY = (y - pan.y) / z;
+        const deleteBtnSize = 20 / z;
+        const deleteBtnX = hit.field.x + hit.field.width - deleteBtnSize - 2;
+        const deleteBtnY = hit.field.y - deleteBtnSize - 2;
+        
+        if (worldX >= deleteBtnX && worldX <= deleteBtnX + deleteBtnSize &&
+            worldY >= deleteBtnY && worldY <= deleteBtnY + deleteBtnSize) {
+          hitRef.current!.style.cursor = 'pointer';
+          return;
+        }
+        
+        // Check if hovering over resize handle
+        if (hit.handle) {
+          const cursorMap: Record<string, string> = {
+            'nw': 'nwse-resize',
+            'ne': 'nesw-resize',
+            'sw': 'nesw-resize',
+            'se': 'nwse-resize',
+            'n': 'n-resize',
+            's': 's-resize',
+            'e': 'e-resize',
+            'w': 'w-resize'
+          };
+          hitRef.current!.style.cursor = cursorMap[hit.handle] || 'default';
+          return;
+        }
+        
+        // Hovering over text field body
+        if (brushRef.current === 'text') {
+          hitRef.current!.style.cursor = 'move';
+        } else {
+          hitRef.current!.style.cursor = 'move';
+        }
+        return;
+      }
+    }
+    
+    // Default cursor based on brush
     if (brushRef.current === 'text') {
       hit.style.cursor = 'text';
     } else {
@@ -143,12 +424,14 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const input = textInputRef.current;
     if (!input || !editingTextFieldRef.current) {
       input?.style.setProperty('display', 'none');
+      input?.style.setProperty('pointer-events', 'none');
       return;
     }
     
     const field = textFieldsRef.current.find(f => f.id === editingTextFieldRef.current);
     if (!field) {
       input.style.setProperty('display', 'none');
+      input.style.setProperty('pointer-events', 'none');
       return;
     }
     
@@ -160,6 +443,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const screenHeight = field.height * z;
     
     input.style.setProperty('display', 'block');
+    input.style.setProperty('pointer-events', 'auto');
     input.style.setProperty('left', `${screenX}px`);
     input.style.setProperty('top', `${screenY}px`);
     input.style.setProperty('width', `${screenWidth}px`);
@@ -299,6 +583,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         textFieldsRef.current = [];
       }
       editingTextFieldRef.current = null;
+      selectedTextFieldRef.current = null;
+      notifySelectedTextField();
       renderAll();
       updateTextInputPosition();
       const overlayCtx = ctxOverlayRef.current;
@@ -325,6 +611,11 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     getHistoryTimeline: () => getHistoryTimeline(),
     jumpToHistory: (entryId: string) => jumpToHistoryEntry(entryId),
     deleteHistorySnapshot: (entryId: string) => deleteHistoryEntry(entryId),
+    getSelectedTextField: () => {
+      const field = findSelectedTextField();
+      return field ? cloneTextField(field) : null;
+    },
+    resizeSelectedTextField: (size, options) => resizeSelectedField(size, options),
   }));
 
   useEffect(() => {
@@ -374,53 +665,6 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     };
     hit.addEventListener('wheel', onWheel, { passive: false });
 
-    function getTextFieldAtPoint(x: number, y: number): { field: TextField; handle?: 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's' } | null {
-    const z = zoomRef.current || 1;
-    const pan = panRef.current;
-    const worldX = (x - pan.x) / z;
-    const worldY = (y - pan.y) / z;
-    const handleSize = 8 / z;
-    
-    for (const field of textFieldsRef.current) {
-      const left = field.x;
-      const top = field.y;
-      const right = field.x + field.width;
-      const bottom = field.y + field.height;
-      
-      // Check resize handles
-      if (worldX >= right - handleSize && worldY >= bottom - handleSize) {
-        return { field, handle: 'se' };
-      }
-      if (worldX <= left + handleSize && worldY >= bottom - handleSize) {
-        return { field, handle: 'sw' };
-      }
-      if (worldX >= right - handleSize && worldY <= top + handleSize) {
-        return { field, handle: 'ne' };
-      }
-      if (worldX <= left + handleSize && worldY <= top + handleSize) {
-        return { field, handle: 'nw' };
-      }
-      if (worldX >= right - handleSize && worldY >= top && worldY <= bottom) {
-        return { field, handle: 'e' };
-      }
-      if (worldX <= left + handleSize && worldY >= top && worldY <= bottom) {
-        return { field, handle: 'w' };
-      }
-      if (worldY <= top + handleSize && worldX >= left && worldX <= right) {
-        return { field, handle: 'n' };
-      }
-      if (worldY >= bottom - handleSize && worldX >= left && worldX <= right) {
-        return { field, handle: 's' };
-      }
-      
-      // Check if inside text field
-      if (worldX >= left && worldX <= right && worldY >= top && worldY <= bottom) {
-        return { field };
-      }
-    }
-    return null;
-  }
-
   function createTextField(x: number, y: number) {
     const z = zoomRef.current || 1;
     const pan = panRef.current;
@@ -443,6 +687,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     
     textFieldsRef.current.push(newField);
     editingTextFieldRef.current = newField.id;
+    selectedTextFieldRef.current = newField.id;
+    notifySelectedTextField();
     renderAll();
     updateTextInputPosition();
     setTimeout(() => {
@@ -485,15 +731,61 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       if (brushRef.current === 'text') {
         if (e.button !== 0 && e.pointerType === 'mouse') return;
         const hit = getTextFieldAtPoint(lx, ly);
-        const isShiftPressed = e.shiftKey;
+        const z = zoomRef.current || 1;
+        const pan = panRef.current;
+        const worldX = (lx - pan.x) / z;
+        const worldY = (ly - pan.y) / z;
         
+        // Check if clicking on delete button for any field
+        for (const field of textFieldsRef.current) {
+          const deleteBtnSize = 20 / z;
+          const deleteBtnX = field.x + field.width - deleteBtnSize - 2;
+          const deleteBtnY = field.y - deleteBtnSize - 2;
+          
+          if (worldX >= deleteBtnX && worldX <= deleteBtnX + deleteBtnSize &&
+              worldY >= deleteBtnY && worldY <= deleteBtnY + deleteBtnSize) {
+            // Delete the text field
+            const index = textFieldsRef.current.findIndex(f => f.id === field.id);
+            if (index !== -1) {
+              textFieldsRef.current.splice(index, 1);
+              if (editingTextFieldRef.current === field.id) {
+                editingTextFieldRef.current = null;
+                if (textInputRef.current) {
+                  textInputRef.current.style.display = 'none';
+                }
+              }
+              if (selectedTextFieldRef.current === field.id) {
+                selectedTextFieldRef.current = null;
+              }
+              notifySelectedTextField();
+              renderAll();
+              updateTextInputPosition();
+              pushHistory();
+            }
+            return;
+          }
+        }
+        
+        // Click on resize handle: start resizing
         if (hit && hit.handle) {
-          // Start resizing (handles take priority)
           resizingTextFieldRef.current = { id: hit.field.id, handle: hit.handle };
+          selectedTextFieldRef.current = hit.field.id;
+          notifySelectedTextField();
+          renderAll();
           return;
-        } else if (hit && hit.field && !isShiftPressed) {
-          // Start editing existing text field (only if Shift is not pressed)
+        } else if (hit && hit.field) {
+          // Click on existing field (not handle): select, allow editing, and prepare for dragging
+          // Stop editing previous field if switching
+          if (editingTextFieldRef.current && editingTextFieldRef.current !== hit.field.id) {
+            const prevField = textFieldsRef.current.find(f => f.id === editingTextFieldRef.current);
+            if (prevField && textInputRef.current) {
+              prevField.text = textInputRef.current.value;
+            }
+          }
+          
+          selectedTextFieldRef.current = hit.field.id;
           editingTextFieldRef.current = hit.field.id;
+          notifySelectedTextField();
           updateTextInputPosition();
           setTimeout(() => {
             if (textInputRef.current) {
@@ -501,26 +793,89 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
               textInputRef.current.select();
             }
           }, 10);
+          
+          // Also prepare for dragging
+          draggingTextFieldRef.current = hit.field.id;
+          textFieldDragOffsetRef.current = { x: worldX - hit.field.x, y: worldY - hit.field.y };
+          renderAll();
           return;
         } else {
-          // Create new text field (either empty space or Shift+click on existing field)
+          // Click on empty space: save current field and deselect
+          if (editingTextFieldRef.current) {
+            const currentField = textFieldsRef.current.find(f => f.id === editingTextFieldRef.current);
+            if (currentField && textInputRef.current) {
+              currentField.text = textInputRef.current.value;
+              pushHistory();
+            }
+          }
+          selectedTextFieldRef.current = null;
+          editingTextFieldRef.current = null;
+          notifySelectedTextField();
+          if (textInputRef.current) {
+            textInputRef.current.style.display = 'none';
+          }
           createTextField(lx, ly);
           return;
         }
       }
       
-      // Check if clicking on existing text field to drag it
-      if (brushRef.current !== 'text') {
-        const hit = getTextFieldAtPoint(lx, ly);
-        if (hit && hit.field && !hit.handle) {
-          const z = zoomRef.current || 1;
-          const pan = panRef.current;
-          const worldX = (lx - pan.x) / z;
-          const worldY = (ly - pan.y) / z;
-          draggingTextFieldRef.current = hit.field.id;
-          textFieldDragOffsetRef.current = { x: worldX - hit.field.x, y: worldY - hit.field.y };
-          return;
+      // Check if clicking on existing text field to drag it (when not using text tool)
+      const currentBrush = brushRef.current;
+      // @ts-expect-error - TypeScript incorrectly narrows type after early return, but 'text' is valid BrushKind
+      if (currentBrush === 'text') {
+        // Already handled text tool above
+        } else {
+          const hit = getTextFieldAtPoint(lx, ly);
+          if (hit && hit.field && !hit.handle) {
+            const field = hit.field;
+            const z = zoomRef.current || 1;
+            const pan = panRef.current;
+            const worldX = (lx - pan.x) / z;
+            const worldY = (ly - pan.y) / z;
+            
+            // Check if clicking on delete button
+            const deleteBtnSize = 20 / z;
+            const deleteBtnX = field.x + field.width - deleteBtnSize - 2;
+            const deleteBtnY = field.y - deleteBtnSize - 2;
+            
+            if (worldX >= deleteBtnX && worldX <= deleteBtnX + deleteBtnSize &&
+                worldY >= deleteBtnY && worldY <= deleteBtnY + deleteBtnSize) {
+              // Delete the text field
+              const index = textFieldsRef.current.findIndex(f => f.id === field.id);
+              if (index !== -1) {
+                textFieldsRef.current.splice(index, 1);
+                if (editingTextFieldRef.current === field.id) {
+                  editingTextFieldRef.current = null;
+                  if (textInputRef.current) {
+                    textInputRef.current.style.display = 'none';
+                  }
+                }
+                if (selectedTextFieldRef.current === field.id) {
+                  selectedTextFieldRef.current = null;
+                }
+                notifySelectedTextField();
+                renderAll();
+                updateTextInputPosition();
+                pushHistory();
+              }
+              return;
+            }
+            
+            // Select and start dragging
+            selectedTextFieldRef.current = field.id;
+            draggingTextFieldRef.current = field.id;
+            textFieldDragOffsetRef.current = { x: worldX - field.x, y: worldY - field.y };
+            notifySelectedTextField();
+            renderAll();
+            return;
+          }
         }
+      
+      // Deselect text field when clicking on empty space with other tools
+      if (selectedTextFieldRef.current) {
+        selectedTextFieldRef.current = null;
+        notifySelectedTextField();
+        renderAll();
       }
       
       // Begin drawing with single pointer (mouse or single touch)
@@ -533,6 +888,9 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: lx, y: ly });
       pointerPosRef.current = { x: lx, y: ly };
       
+      // Update cursor based on what we're hovering over
+      updateCursor(lx, ly);
+      
       // Handle text field resizing
       if (resizingTextFieldRef.current) {
         const z = zoomRef.current || 1;
@@ -542,23 +900,31 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         const field = textFieldsRef.current.find(f => f.id === resizingTextFieldRef.current!.id);
         if (field) {
           const handle = resizingTextFieldRef.current.handle;
+          let widthChanged = false;
+          let heightChanged = false;
           
           if (handle === 'se') {
             field.width = Math.max(50, worldX - field.x);
             field.height = Math.max(20, worldY - field.y);
+            widthChanged = true;
+            heightChanged = true;
           } else if (handle === 'sw') {
             const newWidth = field.x + field.width - worldX;
             if (newWidth >= 50) {
               field.x = worldX;
               field.width = newWidth;
+              widthChanged = true;
             }
             field.height = Math.max(20, worldY - field.y);
+            heightChanged = true;
           } else if (handle === 'ne') {
             field.width = Math.max(50, worldX - field.x);
+            widthChanged = true;
             const newHeight = field.y + field.height - worldY;
             if (newHeight >= 20) {
               field.y = worldY;
               field.height = newHeight;
+              heightChanged = true;
             }
           } else if (handle === 'nw') {
             const newWidth = field.x + field.width - worldX;
@@ -566,31 +932,45 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
             if (newWidth >= 50) {
               field.x = worldX;
               field.width = newWidth;
+              widthChanged = true;
             }
             if (newHeight >= 20) {
               field.y = worldY;
               field.height = newHeight;
+              heightChanged = true;
             }
           } else if (handle === 'e') {
             field.width = Math.max(50, worldX - field.x);
+            widthChanged = true;
           } else if (handle === 'w') {
             const newWidth = field.x + field.width - worldX;
             if (newWidth >= 50) {
               field.x = worldX;
               field.width = newWidth;
+              widthChanged = true;
             }
           } else if (handle === 'n') {
             const newHeight = field.y + field.height - worldY;
             if (newHeight >= 20) {
               field.y = worldY;
               field.height = newHeight;
+              heightChanged = true;
             }
           } else if (handle === 's') {
             field.height = Math.max(20, worldY - field.y);
+            heightChanged = true;
+          }
+          
+          if (widthChanged) {
+            const changed = autoResizeFieldHeight(field, { enforceMinOnly: heightChanged });
+            if (changed) {
+              heightChanged = true;
+            }
           }
           
           updateTextInputPosition();
           renderAll();
+          notifySelectedTextField();
         }
         return;
       }
@@ -608,7 +988,10 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
           }
           field.x = worldX - textFieldDragOffsetRef.current.x;
           field.y = worldY - textFieldDragOffsetRef.current.y;
-          updateTextInputPosition();
+          // Update editing position if field is being edited
+          if (editingTextFieldRef.current === draggingTextFieldRef.current) {
+            updateTextInputPosition();
+          }
           renderAll();
         }
         return;
@@ -620,6 +1003,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         panStartRef.current = { x: lx, y: ly };
         applyTransform();
         updateTextInputPosition();
+        updateCursor(lx, ly);
         return;
       }
       if (pointersRef.current.size >= 2 && pinchStartRef.current) {
@@ -637,7 +1021,11 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         updateTextInputPosition();
         return;
       }
-      if (!isDrawingRef.current) { drawBrushCursorOnly(); return; }
+      if (!isDrawingRef.current) { 
+        updateCursor(lx, ly);
+        drawBrushCursorOnly(); 
+        return; 
+      }
       addPoint(e); renderPreview();
     };
     const onUp = (e: PointerEvent) => {
@@ -647,6 +1035,10 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       if (resizingTextFieldRef.current) {
         resizingTextFieldRef.current = null;
         pushHistory();
+        const rect = (hitRef.current as HTMLDivElement).getBoundingClientRect();
+        const lx = e.clientX - rect.left;
+        const ly = e.clientY - rect.top;
+        updateCursor(lx, ly);
         return;
       }
       
@@ -654,6 +1046,11 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         draggingTextFieldRef.current = null;
         textFieldDragOffsetRef.current = null;
         pushHistory();
+        renderAll();
+        const rect = (hitRef.current as HTMLDivElement).getBoundingClientRect();
+        const lx = e.clientX - rect.left;
+        const ly = e.clientY - rect.top;
+        updateCursor(lx, ly);
         return;
       }
       
@@ -698,20 +1095,44 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     };
     const onResize = () => resize();
     hit.addEventListener('pointerdown', onDown);
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
     hit.addEventListener('pointerleave', onLeave);
     window.addEventListener('resize', onResize);
     const onKeyDown = (e: KeyboardEvent) => { 
+      const target = e.target as HTMLElement;
+      // Don't prevent default if user is typing in an input, textarea, or contentEditable element
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      
       if (e.code === 'Space') {
-        const target = e.target as HTMLElement;
-        // Don't prevent default if user is typing in an input, textarea, or contentEditable element
-        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-          return;
-        }
         e.preventDefault(); 
         spacePressedRef.current = true; 
-      } 
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTextFieldRef.current) {
+        // Delete selected text field
+        e.preventDefault();
+        const index = textFieldsRef.current.findIndex(f => f.id === selectedTextFieldRef.current);
+        if (index !== -1) {
+          textFieldsRef.current.splice(index, 1);
+          if (editingTextFieldRef.current === selectedTextFieldRef.current) {
+            editingTextFieldRef.current = null;
+            if (textInputRef.current) {
+              textInputRef.current.style.display = 'none';
+            }
+          }
+          selectedTextFieldRef.current = null;
+          notifySelectedTextField();
+          renderAll();
+          updateTextInputPosition();
+          pushHistory();
+        }
+      } else if (e.key === 'Escape' && selectedTextFieldRef.current) {
+        // Deselect text field
+        selectedTextFieldRef.current = null;
+        notifySelectedTextField();
+        renderAll();
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => { 
       if (e.code === 'Space') {
@@ -751,8 +1172,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     window.addEventListener('themechange', onTheme as any);
     return () => {
       hit.removeEventListener('pointerdown', onDown);
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
       window.removeEventListener('resize', onResize);
       draw.removeEventListener('dragover', onDragOver);
       draw.removeEventListener('drop', onDrop);
@@ -1119,6 +1540,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     strokesRef.current = [];
     textFieldsRef.current = [];
     editingTextFieldRef.current = null;
+    selectedTextFieldRef.current = null;
+    notifySelectedTextField();
     historyRef.current = [];
     historyIndexRef.current = -1;
     pushHistory('Cleared', true);
@@ -1300,52 +1723,67 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     
     for (const field of textFieldsRef.current) {
       const isEditing = editingTextFieldRef.current === field.id;
+      const isSelected = selectedTextFieldRef.current === field.id;
+      const showControls = isEditing || isSelected || brushRef.current === 'text';
       
-      // Draw text
-      ctx.fillStyle = field.color;
-      ctx.font = `${field.fontSize}px sans-serif`;
-      ctx.textBaseline = 'top';
-      
-      // Word wrap text
-      const words = field.text.split(' ');
-      const lines: string[] = [];
-      let currentLine = '';
-      const maxWidth = field.width - 4;
-      
-      for (const word of words) {
-        const testLine = currentLine ? `${currentLine} ${word}` : word;
-        const metrics = ctx.measureText(testLine);
-        if (metrics.width > maxWidth && currentLine) {
-          lines.push(currentLine);
-          currentLine = word;
-        } else {
-          currentLine = testLine;
+      if (!isEditing) {
+        const lines = getWrappedTextLines(field);
+        if (lines.length) {
+          ctx.fillStyle = field.color;
+          ctx.font = `${field.fontSize}px sans-serif`;
+          ctx.textBaseline = 'top';
+          const lineHeight = field.fontSize * 1.2;
+          lines.forEach((line, idx) => {
+            ctx.fillText(line, field.x + 2, field.y + 2 + idx * lineHeight);
+          });
         }
       }
-      if (currentLine) {
-        lines.push(currentLine);
-      }
       
-      // Draw each line
-      const lineHeight = field.fontSize * 1.2;
-      lines.forEach((line, idx) => {
-        ctx.fillText(line, field.x + 2, field.y + 2 + idx * lineHeight);
-      });
-      
-      // Draw border and resize handles if editing or selected
-      if (isEditing || brushRef.current === 'text') {
-        ctx.strokeStyle = field.color;
-        ctx.lineWidth = 1 / z;
+      // Draw border and resize handles if editing, selected, or text tool is active
+      if (showControls) {
+        ctx.strokeStyle = isSelected ? '#3b82f6' : field.color;
+        ctx.lineWidth = (isSelected ? 2 : 1) / z;
         ctx.setLineDash([]);
         ctx.strokeRect(field.x, field.y, field.width, field.height);
         
-        // Draw resize handles
+        // Draw resize handles (all 8 handles for better control)
         const handleSize = 6 / z;
-        ctx.fillStyle = field.color;
-        ctx.fillRect(field.x + field.width - handleSize, field.y + field.height - handleSize, handleSize, handleSize);
-        ctx.fillRect(field.x, field.y + field.height - handleSize, handleSize, handleSize);
-        ctx.fillRect(field.x + field.width - handleSize, field.y, handleSize, handleSize);
-        ctx.fillRect(field.x, field.y, handleSize, handleSize);
+        ctx.fillStyle = isSelected ? '#3b82f6' : field.color;
+        // Corners
+        ctx.fillRect(field.x + field.width - handleSize, field.y + field.height - handleSize, handleSize, handleSize); // SE
+        ctx.fillRect(field.x, field.y + field.height - handleSize, handleSize, handleSize); // SW
+        ctx.fillRect(field.x + field.width - handleSize, field.y, handleSize, handleSize); // NE
+        ctx.fillRect(field.x, field.y, handleSize, handleSize); // NW
+        // Edges
+        ctx.fillRect(field.x + field.width / 2 - handleSize / 2, field.y, handleSize, handleSize); // N
+        ctx.fillRect(field.x + field.width / 2 - handleSize / 2, field.y + field.height - handleSize, handleSize, handleSize); // S
+        ctx.fillRect(field.x + field.width - handleSize, field.y + field.height / 2 - handleSize / 2, handleSize, handleSize); // E
+        ctx.fillRect(field.x, field.y + field.height / 2 - handleSize / 2, handleSize, handleSize); // W
+        
+        // Draw delete button if selected
+        if (isSelected) {
+          const deleteBtnSize = 20 / z;
+          const deleteBtnX = field.x + field.width - deleteBtnSize - 2;
+          const deleteBtnY = field.y - deleteBtnSize - 2;
+          
+          // Draw delete button background (circle)
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.arc(deleteBtnX + deleteBtnSize / 2, deleteBtnY + deleteBtnSize / 2, deleteBtnSize / 2, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Draw X icon
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2 / z;
+          ctx.lineCap = 'round';
+          const iconPadding = deleteBtnSize * 0.3;
+          ctx.beginPath();
+          ctx.moveTo(deleteBtnX + iconPadding, deleteBtnY + iconPadding);
+          ctx.lineTo(deleteBtnX + deleteBtnSize - iconPadding, deleteBtnY + deleteBtnSize - iconPadding);
+          ctx.moveTo(deleteBtnX + deleteBtnSize - iconPadding, deleteBtnY + iconPadding);
+          ctx.lineTo(deleteBtnX + iconPadding, deleteBtnY + deleteBtnSize - iconPadding);
+          ctx.stroke();
+        }
       }
     }
     
@@ -1424,7 +1862,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     input.style.whiteSpace = 'pre-wrap';
     input.style.wordWrap = 'break-word';
     input.style.zIndex = '10';
-    input.style.pointerEvents = 'auto';
+    input.style.pointerEvents = 'none'; // Start with pointer events disabled, enabled only when editing
     input.style.caretColor = 'currentColor';
     
     const handleInput = () => {
@@ -1438,6 +1876,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         field.height = Math.max(minHeight, scrollHeight);
         input.style.height = `${field.height}px`;
         renderAll();
+        notifySelectedTextField();
       }
     };
     
@@ -1445,6 +1884,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const field = textFieldsRef.current.find(f => f.id === editingTextFieldRef.current);
       if (field) {
         field.text = input.value;
+        autoResizeFieldHeight(field);
+        notifySelectedTextField();
         editingTextFieldRef.current = null;
         pushHistory();
       }
