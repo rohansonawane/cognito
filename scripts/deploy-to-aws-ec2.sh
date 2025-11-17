@@ -120,9 +120,9 @@ if [ -f "scripts/load-secrets.js" ]; then
 fi
 
 # Build frontend if web directory exists
-if [ -d "../../web" ]; then
+if [ -d "../web" ]; then
     echo "🏗️  Building frontend..."
-    cd ../../web
+    cd ../web
     if [ -f "package.json" ]; then
         npm install
         npm run build || echo "⚠️  Frontend build failed (may need manual setup)"
