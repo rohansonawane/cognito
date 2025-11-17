@@ -6,12 +6,10 @@ import {
   Undo2,
   Redo2,
   Eraser,
-  Highlighter,
   PenLine,
   Download as DownloadIcon,
   Save,
   Image as ImageIcon,
-  WandSparkles,
   Trash2,
   ZoomIn,
   ZoomOut,
@@ -139,8 +137,6 @@ export default function App() {
   const brushOptions = useMemo<BrushOption[]>(
     () => [
       { key: 'brush', label: 'Brush', Icon: PenLine },
-      { key: 'marker', label: 'Marker', Icon: WandSparkles },
-      { key: 'highlighter', label: 'Highlighter', Icon: Highlighter },
       { key: 'eraser', label: 'Eraser', Icon: Eraser },
       { key: 'line', label: 'Line', glyph: '／' },
       { key: 'rect', label: 'Rectangle', glyph: '▭' },
@@ -207,12 +203,12 @@ export default function App() {
         (
           <>
             <span className="how-inline-icon"><PenLine size={14} /></span>
-            <span className="how-text">Brushes – brush, marker, highlighter, eraser, line, rectangle, ellipse.</span>
+            <span className="how-text">Brushes – brush, eraser, line, rectangle, ellipse.</span>
           </>
         ),
         (
           <>
-            <span className="how-inline-icon"><Highlighter size={14} /></span>
+            <span className="how-inline-icon"><PenLine size={14} /></span>
             <span className="how-text">Size &amp; Color – fine-tune stroke weight and palette.</span>
           </>
         ),
@@ -1074,7 +1070,7 @@ export default function App() {
           <div className="about-body">
             <p>Cognito lets you sketch, annotate, and send your canvas to AI for descriptions or math solutions. Use the left panel to pick a tool and color, drop an image onto the canvas, then press Ask AI at the bottom.</p>
             <ul>
-              <li>Brush, marker, highlighter, eraser, and basic shapes</li>
+              <li>Brush, eraser, and basic shapes</li>
               <li>Undo/redo, save boards locally, download PNG</li>
               <li>Zoom controls top-right; theme toggle in header</li>
             </ul>
