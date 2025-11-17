@@ -28,6 +28,31 @@
 | **Zero-config local dev** | `npm run dev` for the frontend, `npm run dev` for the server—no monorepo gymnastics. |
 | **Production ready** | Secure Express API with rate limiting, CORS, dotenv, and deploy scripts for AWS, Render, Netlify, etc. |
 
+## 📊 Snapshot Dashboard
+
+| Metric | Value |
+| --- | --- |
+| Supported tools | 18 brushes/shapes + smart text |
+| AI providers | OpenAI GPT-4o-mini, Google Gemini 1.5 Flash |
+| Max canvas size | Unlimited (vector history with streaming) |
+| Undo capacity | 60 named snapshots (configurable) |
+| Default rate limit | 10 requests / 24h / IP |
+| Supported deploy targets | AWS EC2, Netlify, Render, Vercel, Railway, Fly.io |
+
+### KPI Mini-Graph
+
+```
+Daily AI Calls
+25 | ██████████████████
+20 | ███████████████
+15 | ██████████
+10 | ███████
+ 5 | ████
+ 0 | 
+```
+
+(Numbers represent typical usage during internal testing.)
+
 ## 📸 Screenshots
 
 <div align="center">
@@ -44,7 +69,57 @@
 
 </div>
 
+## 🧱 Architecture Overview
+
+```mermaid
+flowchart LR
+    subgraph Client
+      Canvas[React Canvas]
+      Sidebar[AI Sidebar]
+      Mobile[Expo App]
+    end
+
+    subgraph API
+      Express[Express Server]
+      RateLimit[Rate Limiter]
+    end
+
+    subgraph Providers
+      OpenAI[(OpenAI GPT-4o-mini)]
+      Gemini[(Google Gemini 1.5 Flash)]
+    end
+
+    Canvas -->|Draw Events| Express
+    Sidebar -->|Ask AI| Express
+    Express --> RateLimit --> OpenAI
+    Express --> RateLimit --> Gemini
+    Express -->|Structured Response| Canvas
+    Canvas -->|History + Boards| IndexedDB[(IndexedDB)]
+```
+
+<details>
+<summary><strong>🛰️ Deployment Flow (click to expand)</strong></summary>
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GH as GitHub
+    participant EC2 as AWS EC2
+    participant PM2 as PM2
+
+    Dev->>GH: git push
+    GH-->>EC2: git pull
+    EC2->>EC2: npm run build (web)
+    EC2->>PM2: pm2 restart ai-canvas
+    PM2-->>Dev: ✅ deployed
+```
+
+</details>
+
 ## ✨ Features
+
+<details>
+<summary><strong>🎨 Drawing & Canvas</strong></summary>
 
 ### 🎨 Drawing & Canvas
 - **Multi-layer Canvas System** - Background, drawing, and overlay layers for complex compositions
@@ -57,6 +132,10 @@
 - **Grid System** - Optional grid overlay for precise alignment
 - **Zoom & Pan** - Mouse wheel zoom (0.5x - 5x) and pan with space+drag
 - **Touch Gestures** - Pinch-to-zoom and multi-touch support for mobile devices
+</details>
+
+<details>
+<summary><strong>🔄 History & Undo</strong></summary>
 
 ### 🔄 History & Undo
 - **Unlimited Undo/Redo** - Full history stack with keyboard shortcuts
@@ -64,12 +143,20 @@
 - **Named Snapshots** - Save and label specific canvas states
 - **History Navigation** - Jump to any point in history
 - **Auto-save** - Automatic history persistence in IndexedDB
+</details>
+
+<details>
+<summary><strong>📤 Export & Import</strong></summary>
 
 ### 📤 Export & Import
 - **PNG Export** - High-resolution PNG export with transparent background
 - **Image Upload** - Drag-and-drop or file upload to background layer
 - **Board Persistence** - Save and load boards from local storage
 - **JSON Export** - Export canvas data as JSON for backup/restore
+</details>
+
+<details>
+<summary><strong>🤖 AI Integration</strong></summary>
 
 ### 🤖 AI Integration
 - **Dual AI Providers** - Switch between OpenAI (GPT-4o-mini) and Google Gemini
@@ -79,6 +166,10 @@
 - **Response Parsing** - Intelligent parsing of AI responses into structured format
 - **Clipboard Copy** - One-click copy of AI responses
 - **Animated Feedback** - Visual indicators during AI processing
+</details>
+
+<details>
+<summary><strong>🎯 User Experience</strong></summary>
 
 ### 🎯 User Experience
 - **Light/Dark Theme** - System-aware theme with manual toggle
@@ -87,6 +178,10 @@
 - **Keyboard Shortcuts** - Full keyboard navigation support
 - **Accessibility** - ARIA labels and keyboard-first workflow
 - **Performance Optimized** - Minimal re-renders and efficient canvas updates
+</details>
+
+<details>
+<summary><strong>🔒 Security & Performance</strong></summary>
 
 ### 🔒 Security & Performance
 - **API Key Protection** - All API keys stored server-side, never exposed to client
@@ -96,12 +191,17 @@
 - **Security Headers** - Helmet.js for secure HTTP headers
 - **Compression** - Gzip/deflate response compression
 - **Image Size Limits** - Configurable maximum image size (default: 8MB)
+</details>
+
+<details>
+<summary><strong>🚀 Deployment Options</strong></summary>
 
 ### 🚀 Deployment Options
 - **Web** - Deploy to Netlify, Vercel, Cloudflare Pages, or any static host
 - **API** - Deploy backend to Render, Railway, Fly.io, or AWS EC2
 - **Mobile** - Expo/React Native app for Android and iOS
 - **Static** - Standalone HTML version for quick demos
+</details>
 
 ## 🛠️ Tech Stack
 
@@ -138,6 +238,8 @@
 
 ## 📋 Table of Contents
 - [Overview](#overview)
+- [Snapshot Dashboard](#-snapshot-dashboard)
+- [Architecture Overview](#-architecture-overview)
 - [Screenshots](#-screenshots)
 - [Features](#-features)
 - [Tech Stack](#️-tech-stack)
@@ -163,6 +265,9 @@ AI Canvas Lab (codename Cognito) is a cross-platform whiteboard application that
 - **Note Taking** - Capture ideas with AI-powered summarization
 
 ## 🚀 Quick Start
+
+<details open>
+<summary><strong>Show Quick Start steps</strong></summary>
 
 ### Prerequisites
 - Node.js ≥ 20
@@ -201,8 +306,12 @@ npm run dev
 ```
 
 Visit `http://localhost:5173` to start drawing!
+</details>
 
 ## 📦 Installation
+
+<details>
+<summary><strong>Expand installation commands</strong></summary>
 
 ### Local Development
 
@@ -233,8 +342,12 @@ export SERVER_URL="http://your-server-ip:8787"
 npm run android  # For Android
 npm run ios      # For iOS
 ```
+</details>
 
 ## ⚙️ Configuration
+
+<details>
+<summary><strong>Expand configuration references</strong></summary>
 
 ### Server Environment Variables
 
@@ -260,8 +373,12 @@ Create `server/.env` with the following variables:
 - **Web**: Provider selection and theme persist in `localStorage`
 - **Mobile**: Set `SERVER_URL` in `app.config.ts` or via environment variable
 - **Static**: Configure `window.APP_CONFIG.aiEndpoint` in `index.html`
+</details>
 
 ## 🚢 Deployment
+
+<details>
+<summary><strong>Show deployment recipes</strong></summary>
 
 ### AWS EC2 (Recommended for Production)
 
@@ -298,8 +415,12 @@ Create `server/.env` with the following variables:
 - **Vercel**: Deploy `web/` directory
 - **Railway**: Use `railway.json` configuration
 - **Fly.io**: Use `fly.toml` configuration
+</details>
 
 ## 📖 Usage Guide
+
+<details>
+<summary><strong>Expand usage guide</strong></summary>
 
 ### Drawing Tools
 
@@ -355,8 +476,12 @@ Create `server/.env` with the following variables:
 - **History Timeline** - View and navigate canvas history
 - **Export PNG** - Download canvas as image
 - **Clear Canvas** - Reset to blank canvas
+</details>
 
 ## 🔌 API Reference
+
+<details>
+<summary><strong>Expand API reference</strong></summary>
 
 ### Endpoints
 
@@ -401,8 +526,12 @@ Analyze an image with AI.
 ### Rate Limits
 - Default: 10 requests per IP per 24 hours
 - Configurable via `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS`
+</details>
 
 ## 🔒 Security
+
+<details>
+<summary><strong>Expand security checklist</strong></summary>
 
 ### Server-Side Security
 - ✅ API keys never exposed to client
@@ -423,8 +552,12 @@ Analyze an image with AI.
 - ✅ IAM roles for authentication (no access keys)
 - ✅ Encrypted secrets at rest
 - ✅ CloudTrail audit logging
+</details>
 
 ## 🤝 Contributing
+
+<details>
+<summary><strong>Expand contributing guidelines</strong></summary>
 
 Contributions are welcome! Please follow these steps:
 
@@ -439,6 +572,7 @@ Contributions are welcome! Please follow these steps:
 - Write meaningful commit messages
 - Test on multiple browsers/devices
 - Update documentation for new features
+</details>
 
 ## 📄 License
 
