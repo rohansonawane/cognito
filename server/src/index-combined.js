@@ -20,11 +20,40 @@ const app = express();
 app.disable('x-powered-by');
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  contentSecurityPolicy: false, // Disable CSP for now to allow scripts
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // unsafe-eval needed for Vite in dev
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://api.openai.com", "https://generativelanguage.googleapis.com"],
+      fontSrc: ["'self'", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  },
 }));
 app.use(compression());
+// CORS configuration - only allow trusted origins
+const allowedOrigins = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+  : ['https://cognito.shuruaat.in', 'https://3.12.155.210', 'http://localhost:5173', 'http://localhost:8787'];
 app.use(cors({
-  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : true,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, etc.) in development
+    if (!origin && process.env.NODE_ENV === 'development') {
+      return callback(null, true);
+    }
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
 }));
 
 const MAX_IMAGE_MB = Number(process.env.MAX_IMAGE_MB || 8);
@@ -58,22 +87,29 @@ app.post('/api/analyze', async (req, res) => {
     if (!image || typeof image !== 'string') return res.status(400).json({ ok: false, error: 'Missing image dataUrl' });
     if (!['openai', 'gemini'].includes(provider)) return res.status(400).json({ ok: false, error: 'Invalid provider' });
     const validImage = validateDataUrl(image, MAX_IMAGE_MB);
+    const sanitizedPrompt = sanitizePrompt(prompt);
 
     if (provider === 'openai') {
       if (!OPENAI_API_KEY) return res.status(500).json({ ok: false, error: 'Missing OPENAI_API_KEY' });
-      const result = await analyzeOpenAI(validImage, prompt, OPENAI_API_KEY);
+      const result = await analyzeOpenAI(validImage, sanitizedPrompt, OPENAI_API_KEY);
       return res.json({ ok: true, message: result });
     }
 
     if (provider === 'gemini') {
       if (!GEMINI_API_KEY) return res.status(500).json({ ok: false, error: 'Missing GEMINI_API_KEY' });
-      const result = await analyzeGemini(validImage, prompt, GEMINI_API_KEY);
+      const result = await analyzeGemini(validImage, sanitizedPrompt, GEMINI_API_KEY);
       return res.json({ ok: true, message: result });
     }
 
     return res.status(400).json({ ok: false, error: 'Unknown provider' });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e && e.message ? e.message : e) });
+    // Log full error server-side for debugging
+    console.error('API Error:', e);
+    const isDev = process.env.NODE_ENV === 'development';
+    const errorMessage = isDev 
+      ? String(e?.message || e) 
+      : 'An error occurred while processing your request. Please try again.';
+    return res.status(500).json({ ok: false, error: errorMessage });
   }
 });
 
@@ -137,7 +173,7 @@ async function analyzeOpenAI(dataUrl, prompt, apiKey) {
     {
       role: 'user',
       content: [
-        { type: 'text', text: prompt || 'Analyze and explain the image per the format. If math, solve with steps and final answer.' },
+        { type: 'text', text: sanitizePrompt(prompt) || 'Analyze and explain the image per the format. If math, solve with steps and final answer.' },
         { type: 'image_url', image_url: { url: dataUrl } }
       ]
     }
@@ -172,7 +208,7 @@ async function analyzeGemini(dataUrl, prompt, apiKey) {
     contents: [
       {
         parts: [
-          { text: (prompt || '') + '\n\nRole: Expert vision tutor for sketches. Follow this output format with short, clear sections. If math, show steps and end with Answer: <value>. If diagram/UI, describe parts and suggestions. If text, summarize and extract actions. Keep under 12 lines.' },
+          { text: (sanitizePrompt(prompt) || '') + '\n\nRole: Expert vision tutor for sketches. Follow this output format with short, clear sections. If math, show steps and end with Answer: <value>. If diagram/UI, describe parts and suggestions. If text, summarize and extract actions. Keep under 12 lines.' },
           { inline_data: { mime_type: mimeType, data: base64 } }
         ]
       }
@@ -211,8 +247,17 @@ function validateDataUrl(dataUrl, maxMb = 8) {
   return dataUrl;
 }
 
+function sanitizePrompt(prompt) {
+  if (!prompt || typeof prompt !== 'string') return '';
+  // Remove control characters and limit length
+  return prompt
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control chars
+    .slice(0, 2000) // Limit length to prevent abuse
+    .trim();
+}
+
 function toPlainText(input) {
-  if (!input || typeof input !== 'string') return '';
+  if !input || typeof input !== 'string') return '';
   let s = input;
   s = s.replace(/\\\[|\\\]|\\\(|\\\)/g, '');
   s = s.replace(/\$\$([\s\S]*?)\$\$/g, '$1');
