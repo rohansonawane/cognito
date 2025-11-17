@@ -257,7 +257,7 @@ function sanitizePrompt(prompt) {
 }
 
 function toPlainText(input) {
-  if !input || typeof input !== 'string') return '';
+  if (!input || typeof input !== 'string') return '';
   let s = input;
   s = s.replace(/\\\[|\\\]|\\\(|\\\)/g, '');
   s = s.replace(/\$\$([\s\S]*?)\$\$/g, '$1');
