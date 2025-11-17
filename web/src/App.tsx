@@ -36,6 +36,7 @@ import {
   Triangle as TriangleIcon,
   Diamond as DiamondIcon,
   Hexagon as HexagonIcon,
+  Type,
 } from 'lucide-react';
 import { ColorPicker } from './components/ColorPicker';
 import { SizeControl } from './components/SizeControl';
@@ -149,6 +150,7 @@ export default function App() {
       { key: 'triangle', label: 'Triangle', Icon: TriangleIcon },
       { key: 'diamond', label: 'Diamond', Icon: DiamondIcon },
       { key: 'hexagon', label: 'Hexagon', Icon: HexagonIcon },
+      { key: 'text', label: 'Text', Icon: Type },
     ],
     []
   );

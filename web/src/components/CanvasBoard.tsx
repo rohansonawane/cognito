@@ -58,6 +58,16 @@ type Stroke = {
   points: Point[];
   closed?: boolean;
 };
+type TextField = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  color: string;
+  fontSize: number;
+};
 
 const SHAPE_KINDS: ShapeKind[] = ['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon'];
 const SHAPE_SET = new Set<ShapeKind>(SHAPE_KINDS);
@@ -90,6 +100,12 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const bgImageRef = useRef<HTMLImageElement | null>(null);
   const bgPlacementRef = useRef<{dx:number;dy:number;dw:number;dh:number} | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
+  const textFieldsRef = useRef<TextField[]>([]);
+  const editingTextFieldRef = useRef<string | null>(null);
+  const resizingTextFieldRef = useRef<{id: string; handle: 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's'} | null>(null);
+  const draggingTextFieldRef = useRef<string | null>(null);
+  const textFieldDragOffsetRef = useRef<{x: number; y: number} | null>(null);
+  const textInputRef = useRef<HTMLTextAreaElement | null>(null);
   const pointersRef = useRef<Map<number, {x:number;y:number}>>(new Map());
   const pinchStartRef = useRef<{dist:number; center:{x:number;y:number}; pan:{x:number;y:number}; zoom:number} | null>(null);
   const spacePressedRef = useRef<boolean>(false);
@@ -100,7 +116,11 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const updateCursor = () => {
     const hit = hitRef.current;
     if (!hit) return;
-    hit.style.cursor = 'crosshair';
+    if (brushRef.current === 'text') {
+      hit.style.cursor = 'text';
+    } else {
+      hit.style.cursor = 'crosshair';
+    }
   };
 
   function getHistoryTimeline(): HistorySnapshot[] {
@@ -119,14 +139,55 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     }
   }
 
+  function updateTextInputPosition() {
+    const input = textInputRef.current;
+    if (!input || !editingTextFieldRef.current) {
+      input?.style.setProperty('display', 'none');
+      return;
+    }
+    
+    const field = textFieldsRef.current.find(f => f.id === editingTextFieldRef.current);
+    if (!field) {
+      input.style.setProperty('display', 'none');
+      return;
+    }
+    
+    const z = zoomRef.current || 1;
+    const pan = panRef.current;
+    const screenX = field.x * z + pan.x;
+    const screenY = field.y * z + pan.y;
+    const screenWidth = field.width * z;
+    const screenHeight = field.height * z;
+    
+    input.style.setProperty('display', 'block');
+    input.style.setProperty('left', `${screenX}px`);
+    input.style.setProperty('top', `${screenY}px`);
+    input.style.setProperty('width', `${screenWidth}px`);
+    input.style.setProperty('height', `${screenHeight}px`);
+    input.style.setProperty('font-size', `${field.fontSize * z}px`);
+    input.style.setProperty('color', field.color);
+    input.value = field.text;
+  }
+
   function applyHistoryEntry(entry?: HistoryEntry) {
     if (!entry) return;
     try {
-      strokesRef.current = JSON.parse(entry.data || '[]');
+      const parsed = JSON.parse(entry.data || '{}');
+      if (Array.isArray(parsed)) {
+        // Legacy format (just strokes)
+        strokesRef.current = parsed;
+        textFieldsRef.current = [];
+      } else {
+        strokesRef.current = parsed.strokes || [];
+        textFieldsRef.current = parsed.textFields || [];
+      }
     } catch {
       strokesRef.current = [];
+      textFieldsRef.current = [];
     }
+    editingTextFieldRef.current = null;
     renderAll();
+    updateTextInputPosition();
     const overlayCtx = ctxOverlayRef.current;
     if (overlayCtx) {
       overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -136,7 +197,10 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
 
   function pushHistory(label?: string, force = false) {
     try {
-      const data = JSON.stringify(strokesRef.current);
+      const data = JSON.stringify({
+        strokes: strokesRef.current,
+        textFields: textFieldsRef.current,
+      });
       if (!data) return;
       const history = historyRef.current;
       const currentIndex = historyIndexRef.current;
@@ -209,20 +273,48 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       updateCursor();
     },
     resetView: () => { zoomRef.current = 1; panRef.current = {x:0,y:0}; applyTransform(); },
-    getStrokesJSON: () => { try { return JSON.stringify(strokesRef.current); } catch { return '[]'; } },
+    getStrokesJSON: () => { 
+      try { 
+        return JSON.stringify({
+          strokes: strokesRef.current,
+          textFields: textFieldsRef.current,
+        }); 
+      } catch { 
+        return '{"strokes":[],"textFields":[]}'; 
+      } 
+    },
     setStrokesJSON: (json: string) => {
       try {
-        strokesRef.current = JSON.parse(json || '[]');
+        const parsed = JSON.parse(json || '{}');
+        if (Array.isArray(parsed)) {
+          // Legacy format
+          strokesRef.current = parsed;
+          textFieldsRef.current = [];
+        } else {
+          strokesRef.current = parsed.strokes || [];
+          textFieldsRef.current = parsed.textFields || [];
+        }
       } catch {
         strokesRef.current = [];
+        textFieldsRef.current = [];
       }
+      editingTextFieldRef.current = null;
       renderAll();
+      updateTextInputPosition();
       const overlayCtx = ctxOverlayRef.current;
       if (overlayCtx) {
         overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
         overlayCtx.clearRect(0, 0, overlayCtx.canvas.width, overlayCtx.canvas.height);
       }
-      const entry: HistoryEntry = { id: createHistoryId(), data: JSON.stringify(strokesRef.current), ts: Date.now(), label: 'Loaded' };
+      const entry: HistoryEntry = { 
+        id: createHistoryId(), 
+        data: JSON.stringify({
+          strokes: strokesRef.current,
+          textFields: textFieldsRef.current,
+        }), 
+        ts: Date.now(), 
+        label: 'Loaded' 
+      };
       historyRef.current = [entry];
       historyIndexRef.current = 0;
       emitHistory();
@@ -282,7 +374,86 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     };
     hit.addEventListener('wheel', onWheel, { passive: false });
 
-    const onDown = (e: PointerEvent) => {
+    function getTextFieldAtPoint(x: number, y: number): { field: TextField; handle?: 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's' } | null {
+    const z = zoomRef.current || 1;
+    const pan = panRef.current;
+    const worldX = (x - pan.x) / z;
+    const worldY = (y - pan.y) / z;
+    const handleSize = 8 / z;
+    
+    for (const field of textFieldsRef.current) {
+      const left = field.x;
+      const top = field.y;
+      const right = field.x + field.width;
+      const bottom = field.y + field.height;
+      
+      // Check resize handles
+      if (worldX >= right - handleSize && worldY >= bottom - handleSize) {
+        return { field, handle: 'se' };
+      }
+      if (worldX <= left + handleSize && worldY >= bottom - handleSize) {
+        return { field, handle: 'sw' };
+      }
+      if (worldX >= right - handleSize && worldY <= top + handleSize) {
+        return { field, handle: 'ne' };
+      }
+      if (worldX <= left + handleSize && worldY <= top + handleSize) {
+        return { field, handle: 'nw' };
+      }
+      if (worldX >= right - handleSize && worldY >= top && worldY <= bottom) {
+        return { field, handle: 'e' };
+      }
+      if (worldX <= left + handleSize && worldY >= top && worldY <= bottom) {
+        return { field, handle: 'w' };
+      }
+      if (worldY <= top + handleSize && worldX >= left && worldX <= right) {
+        return { field, handle: 'n' };
+      }
+      if (worldY >= bottom - handleSize && worldX >= left && worldX <= right) {
+        return { field, handle: 's' };
+      }
+      
+      // Check if inside text field
+      if (worldX >= left && worldX <= right && worldY >= top && worldY <= bottom) {
+        return { field };
+      }
+    }
+    return null;
+  }
+
+  function createTextField(x: number, y: number) {
+    const z = zoomRef.current || 1;
+    const pan = panRef.current;
+    const worldX = (x - pan.x) / z;
+    const worldY = (y - pan.y) / z;
+    const fontSize = Math.max(12, sizeRef.current * 2);
+    const defaultWidth = 200;
+    const defaultHeight = fontSize * 1.5;
+    
+    const newField: TextField = {
+      id: createHistoryId(),
+      x: worldX,
+      y: worldY,
+      width: defaultWidth,
+      height: defaultHeight,
+      text: '',
+      color: colorRef.current,
+      fontSize: fontSize,
+    };
+    
+    textFieldsRef.current.push(newField);
+    editingTextFieldRef.current = newField.id;
+    renderAll();
+    updateTextInputPosition();
+    setTimeout(() => {
+      if (textInputRef.current) {
+        textInputRef.current.focus();
+      }
+    }, 10);
+    pushHistory();
+  }
+
+  const onDown = (e: PointerEvent) => {
       // Track pointers for pinch (touch)
       const rect = (hitRef.current as HTMLDivElement).getBoundingClientRect();
       const lx = e.clientX - rect.left; const ly = e.clientY - rect.top;
@@ -309,6 +480,49 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         pinchStartRef.current = { dist, center, pan: { ...panRef.current }, zoom: zoomRef.current };
         return;
       }
+      
+      // Handle text tool
+      if (brushRef.current === 'text') {
+        if (e.button !== 0 && e.pointerType === 'mouse') return;
+        const hit = getTextFieldAtPoint(lx, ly);
+        const isShiftPressed = e.shiftKey;
+        
+        if (hit && hit.handle) {
+          // Start resizing (handles take priority)
+          resizingTextFieldRef.current = { id: hit.field.id, handle: hit.handle };
+          return;
+        } else if (hit && hit.field && !isShiftPressed) {
+          // Start editing existing text field (only if Shift is not pressed)
+          editingTextFieldRef.current = hit.field.id;
+          updateTextInputPosition();
+          setTimeout(() => {
+            if (textInputRef.current) {
+              textInputRef.current.focus();
+              textInputRef.current.select();
+            }
+          }, 10);
+          return;
+        } else {
+          // Create new text field (either empty space or Shift+click on existing field)
+          createTextField(lx, ly);
+          return;
+        }
+      }
+      
+      // Check if clicking on existing text field to drag it
+      if (brushRef.current !== 'text') {
+        const hit = getTextFieldAtPoint(lx, ly);
+        if (hit && hit.field && !hit.handle) {
+          const z = zoomRef.current || 1;
+          const pan = panRef.current;
+          const worldX = (lx - pan.x) / z;
+          const worldY = (ly - pan.y) / z;
+          draggingTextFieldRef.current = hit.field.id;
+          textFieldDragOffsetRef.current = { x: worldX - hit.field.x, y: worldY - hit.field.y };
+          return;
+        }
+      }
+      
       // Begin drawing with single pointer (mouse or single touch)
       if (e.button!==0 && e.pointerType === 'mouse') return;
       isDrawingRef.current = true; pointsRef.current = []; addPoint(e); renderPreview();
@@ -318,11 +532,94 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const lx = e.clientX - rect.left; const ly = e.clientY - rect.top;
       if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: lx, y: ly });
       pointerPosRef.current = { x: lx, y: ly };
+      
+      // Handle text field resizing
+      if (resizingTextFieldRef.current) {
+        const z = zoomRef.current || 1;
+        const pan = panRef.current;
+        const worldX = (lx - pan.x) / z;
+        const worldY = (ly - pan.y) / z;
+        const field = textFieldsRef.current.find(f => f.id === resizingTextFieldRef.current!.id);
+        if (field) {
+          const handle = resizingTextFieldRef.current.handle;
+          
+          if (handle === 'se') {
+            field.width = Math.max(50, worldX - field.x);
+            field.height = Math.max(20, worldY - field.y);
+          } else if (handle === 'sw') {
+            const newWidth = field.x + field.width - worldX;
+            if (newWidth >= 50) {
+              field.x = worldX;
+              field.width = newWidth;
+            }
+            field.height = Math.max(20, worldY - field.y);
+          } else if (handle === 'ne') {
+            field.width = Math.max(50, worldX - field.x);
+            const newHeight = field.y + field.height - worldY;
+            if (newHeight >= 20) {
+              field.y = worldY;
+              field.height = newHeight;
+            }
+          } else if (handle === 'nw') {
+            const newWidth = field.x + field.width - worldX;
+            const newHeight = field.y + field.height - worldY;
+            if (newWidth >= 50) {
+              field.x = worldX;
+              field.width = newWidth;
+            }
+            if (newHeight >= 20) {
+              field.y = worldY;
+              field.height = newHeight;
+            }
+          } else if (handle === 'e') {
+            field.width = Math.max(50, worldX - field.x);
+          } else if (handle === 'w') {
+            const newWidth = field.x + field.width - worldX;
+            if (newWidth >= 50) {
+              field.x = worldX;
+              field.width = newWidth;
+            }
+          } else if (handle === 'n') {
+            const newHeight = field.y + field.height - worldY;
+            if (newHeight >= 20) {
+              field.y = worldY;
+              field.height = newHeight;
+            }
+          } else if (handle === 's') {
+            field.height = Math.max(20, worldY - field.y);
+          }
+          
+          updateTextInputPosition();
+          renderAll();
+        }
+        return;
+      }
+      
+      // Handle text field dragging
+      if (draggingTextFieldRef.current) {
+        const z = zoomRef.current || 1;
+        const pan = panRef.current;
+        const worldX = (lx - pan.x) / z;
+        const worldY = (ly - pan.y) / z;
+        const field = textFieldsRef.current.find(f => f.id === draggingTextFieldRef.current);
+        if (field) {
+          if (!textFieldDragOffsetRef.current) {
+            textFieldDragOffsetRef.current = { x: worldX - field.x, y: worldY - field.y };
+          }
+          field.x = worldX - textFieldDragOffsetRef.current.x;
+          field.y = worldY - textFieldDragOffsetRef.current.y;
+          updateTextInputPosition();
+          renderAll();
+        }
+        return;
+      }
+      
       if (isPanningRef.current) {
         const dx = lx - panStartRef.current.x; const dy = ly - panStartRef.current.y;
         panRef.current = { x: panRef.current.x + dx, y: panRef.current.y + dy };
         panStartRef.current = { x: lx, y: ly };
         applyTransform();
+        updateTextInputPosition();
         return;
       }
       if (pointersRef.current.size >= 2 && pinchStartRef.current) {
@@ -337,6 +634,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         panRef.current = { x: centerNow.x - worldCenterX * newZoom, y: centerNow.y - worldCenterY * newZoom };
         zoomRef.current = newZoom;
         applyTransform();
+        updateTextInputPosition();
         return;
       }
       if (!isDrawingRef.current) { drawBrushCursorOnly(); return; }
@@ -345,6 +643,20 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const onUp = (e: PointerEvent) => {
       pointersRef.current.delete(e.pointerId);
       if (pointersRef.current.size < 2) pinchStartRef.current = null;
+      
+      if (resizingTextFieldRef.current) {
+        resizingTextFieldRef.current = null;
+        pushHistory();
+        return;
+      }
+      
+      if (draggingTextFieldRef.current) {
+        draggingTextFieldRef.current = null;
+        textFieldDragOffsetRef.current = null;
+        pushHistory();
+        return;
+      }
+      
       if (isPanningRef.current) {
         isPanningRef.current = false;
         updateCursor();
@@ -803,14 +1115,17 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     ctxBg.fillStyle = bg;
     ctxBg.fillRect(0, 0, rect.width, rect.height);
     renderGrid();
-    // reset vector strokes and history so old content doesn't reappear
+    // reset vector strokes, text fields and history so old content doesn't reappear
     strokesRef.current = [];
+    textFieldsRef.current = [];
+    editingTextFieldRef.current = null;
     historyRef.current = [];
     historyIndexRef.current = -1;
     pushHistory('Cleared', true);
     // clear overlay preview
     try { const o = ctxOverlayRef.current!; o.setTransform(1,0,0,1,0,0); o.clearRect(0,0,o.canvas.width,o.canvas.height); } catch {}
     // re-render blank state
+    updateTextInputPosition();
     renderAll();
   }
 
@@ -865,10 +1180,11 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       tmp.width = rect.width; tmp.height = rect.height;
       const ctx = tmp.getContext('2d')!;
       ctx.drawImage(bgRef.current!, 0, 0, rect.width, rect.height);
-      // re-render strokes into tmp so export always matches current zoom
+      // re-render strokes and text fields into tmp so export always matches current zoom
       const z = zoomRef.current || 1; const pan = panRef.current;
       ctx.setTransform(z,0,0,z,pan.x,pan.y);
       drawStrokes(ctx, z);
+      drawTextFields(ctx, z);
       return tmp.toDataURL('image/png');
     } catch {
       return null;
@@ -910,6 +1226,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     renderAll();
     renderPreview();
     updateCursor();
+    updateTextInputPosition();
   }
 
   function drawStrokes(ctx: CanvasRenderingContext2D, z: number) {
@@ -970,9 +1287,69 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
     ctx.setTransform(z*dpr,0,0,z*dpr,pan.x*dpr,pan.y*dpr);
     drawStrokes(ctx, z);
+    drawTextFields(ctx, z);
     ctx.setTransform(dpr,0,0,dpr,0,0);
     renderGrid();
     renderBrushCursor();
+  }
+
+  function drawTextFields(ctx: CanvasRenderingContext2D, z: number) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    
+    for (const field of textFieldsRef.current) {
+      const isEditing = editingTextFieldRef.current === field.id;
+      
+      // Draw text
+      ctx.fillStyle = field.color;
+      ctx.font = `${field.fontSize}px sans-serif`;
+      ctx.textBaseline = 'top';
+      
+      // Word wrap text
+      const words = field.text.split(' ');
+      const lines: string[] = [];
+      let currentLine = '';
+      const maxWidth = field.width - 4;
+      
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+      
+      // Draw each line
+      const lineHeight = field.fontSize * 1.2;
+      lines.forEach((line, idx) => {
+        ctx.fillText(line, field.x + 2, field.y + 2 + idx * lineHeight);
+      });
+      
+      // Draw border and resize handles if editing or selected
+      if (isEditing || brushRef.current === 'text') {
+        ctx.strokeStyle = field.color;
+        ctx.lineWidth = 1 / z;
+        ctx.setLineDash([]);
+        ctx.strokeRect(field.x, field.y, field.width, field.height);
+        
+        // Draw resize handles
+        const handleSize = 6 / z;
+        ctx.fillStyle = field.color;
+        ctx.fillRect(field.x + field.width - handleSize, field.y + field.height - handleSize, handleSize, handleSize);
+        ctx.fillRect(field.x, field.y + field.height - handleSize, handleSize, handleSize);
+        ctx.fillRect(field.x + field.width - handleSize, field.y, handleSize, handleSize);
+        ctx.fillRect(field.x, field.y, handleSize, handleSize);
+      }
+    }
+    
+    ctx.restore();
   }
 
   function renderGrid() {
@@ -1032,6 +1409,78 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
 
     ctx.setTransform(1,0,0,1,0,0);
   }
+
+  useEffect(() => {
+    const input = document.createElement('textarea');
+    input.style.position = 'absolute';
+    input.style.display = 'none';
+    input.style.background = 'transparent';
+    input.style.border = 'none';
+    input.style.outline = 'none';
+    input.style.resize = 'none';
+    input.style.overflow = 'hidden';
+    input.style.padding = '2px';
+    input.style.fontFamily = 'sans-serif';
+    input.style.whiteSpace = 'pre-wrap';
+    input.style.wordWrap = 'break-word';
+    input.style.zIndex = '10';
+    input.style.pointerEvents = 'auto';
+    input.style.caretColor = 'currentColor';
+    
+    const handleInput = () => {
+      const field = textFieldsRef.current.find(f => f.id === editingTextFieldRef.current);
+      if (field) {
+        field.text = input.value;
+        // Auto-resize height based on content
+        input.style.height = 'auto';
+        const scrollHeight = input.scrollHeight;
+        const minHeight = field.fontSize * 1.5;
+        field.height = Math.max(minHeight, scrollHeight);
+        input.style.height = `${field.height}px`;
+        renderAll();
+      }
+    };
+    
+    const handleBlur = () => {
+      const field = textFieldsRef.current.find(f => f.id === editingTextFieldRef.current);
+      if (field) {
+        field.text = input.value;
+        editingTextFieldRef.current = null;
+        pushHistory();
+      }
+      input.style.display = 'none';
+      renderAll();
+    };
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        const field = textFieldsRef.current.find(f => f.id === editingTextFieldRef.current);
+        if (field) {
+          input.value = field.text; // Revert changes
+        }
+        handleBlur();
+      } else if (e.key === 'Enter' && !e.shiftKey) {
+        // Allow Enter to create new line, Shift+Enter to finish
+        // For now, just allow Enter to create new line
+      }
+    };
+    
+    input.addEventListener('input', handleInput);
+    input.addEventListener('blur', handleBlur);
+    input.addEventListener('keydown', handleKeyDown);
+    textInputRef.current = input;
+    
+    if (hostRef.current) {
+      hostRef.current.appendChild(input);
+    }
+    
+    return () => {
+      input.removeEventListener('input', handleInput);
+      input.removeEventListener('blur', handleBlur);
+      input.removeEventListener('keydown', handleKeyDown);
+      input.remove();
+    };
+  }, []);
 
   return (
     <div ref={hostRef} className="board-stack" style={{ position:'relative', width:'100%', height:'100%' }}>
