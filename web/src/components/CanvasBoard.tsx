@@ -127,7 +127,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const spacePressedRef = useRef<boolean>(false);
   const showGridRef = useRef<boolean>(showGrid);
   const gridSizeRef = useRef<number>(gridSize);
-  const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
+  const pointerClientRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const onTextFieldChangeRef = useRef(onTextFieldChange);
   useEffect(() => {
     onTextFieldChangeRef.current = onTextFieldChange;
@@ -713,7 +713,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         isPanningRef.current = true;
         panStartRef.current = { x: lx, y: ly };
         updateCursor();
-        pointerPosRef.current = null;
+        pointerClientRef.current = null;
         drawBrushCursorOnly();
         return;
       }
@@ -886,7 +886,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const rect = (hitRef.current as HTMLDivElement).getBoundingClientRect();
       const lx = e.clientX - rect.left; const ly = e.clientY - rect.top;
       if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: lx, y: ly });
-      pointerPosRef.current = { x: lx, y: ly };
+      pointerClientRef.current = { clientX: e.clientX, clientY: e.clientY };
       
       // Update cursor based on what we're hovering over
       updateCursor(lx, ly);
@@ -1060,14 +1060,14 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         if (e.pointerType === 'mouse') {
           drawBrushCursorOnly();
         } else {
-          pointerPosRef.current = null;
+          pointerClientRef.current = null;
           drawBrushCursorOnly();
         }
         return;
       }
       if (!isDrawingRef.current) {
         if (e.pointerType !== 'mouse') {
-          pointerPosRef.current = null;
+          pointerClientRef.current = null;
           drawBrushCursorOnly();
         }
         return;
@@ -1078,7 +1078,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       pointsRef.current = [];
       renderAll();
       if (e.pointerType !== 'mouse') {
-        pointerPosRef.current = null;
+        pointerClientRef.current = null;
         drawBrushCursorOnly();
       } else {
         drawBrushCursorOnly();
@@ -1086,7 +1086,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     };
     const onLeave = () => {
       if (isDrawingRef.current) return;
-      pointerPosRef.current = null;
+      pointerClientRef.current = null;
       const ctxO = ctxOverlayRef.current;
       if (ctxO) {
         ctxO.setTransform(1,0,0,1,0,0);
@@ -1226,7 +1226,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     // map pointer from hit layer space to logical space (invert pan/zoom)
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
-    pointerPosRef.current = { x: localX, y: localY };
+    pointerClientRef.current = { clientX: e.clientX, clientY: e.clientY };
     const x = (localX - panRef.current.x) / z;
     const y = (localY - panRef.current.y) / z;
     const p = typeof e.pressure === 'number' && e.pressure > 0 ? e.pressure : 1;
@@ -1446,9 +1446,13 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   }
 
   function renderBrushCursorCore(ctxO: CanvasRenderingContext2D, dpr: number) {
-    const pointer = pointerPosRef.current;
+    const pointer = pointerClientRef.current;
+    const hit = hitRef.current;
     const mode = brushRef.current;
-    if (!pointer) return;
+    if (!pointer || !hit) return;
+    const rect = hit.getBoundingClientRect();
+    const localX = pointer.clientX - rect.left;
+    const localY = pointer.clientY - rect.top;
     if (isShapeBrush(mode)) return;
     const isFreehand = mode === 'brush' || mode === 'marker' || mode === 'highlighter' || mode === 'eraser';
     if (!isFreehand) return;
@@ -1464,8 +1468,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const displaySize = baseSize / z;
     const radiusCss = Math.max(2, displaySize / 2);
     const radiusDevice = radiusCss * dpr;
-    const cx = pointer.x * dpr;
-    const cy = pointer.y * dpr;
+    const cx = localX * dpr;
+    const cy = localY * dpr;
     ctxO.save();
     ctxO.strokeStyle = mode === 'eraser' ? 'rgba(255,255,255,0.9)' : 'rgba(14,165,233,0.9)';
     ctxO.lineWidth = Math.max(1, 1.5 * dpr);
