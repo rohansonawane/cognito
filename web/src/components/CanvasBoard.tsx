@@ -142,6 +142,18 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     pointerWorldRef.current = { x: (localX - pan.x) / z, y: (localY - pan.y) / z };
     return { localX, localY };
   }
+
+  function syncPointerWorldFromClient() {
+    const hit = hitRef.current;
+    const pointer = pointerClientRef.current;
+    if (!hit || !pointer) return;
+    const rect = hit.getBoundingClientRect();
+    const localX = pointer.clientX - rect.left;
+    const localY = pointer.clientY - rect.top;
+    const z = zoomRef.current || 1;
+    const pan = panRef.current;
+    pointerWorldRef.current = { x: (localX - pan.x) / z, y: (localY - pan.y) / z };
+  }
   const onTextFieldChangeRef = useRef(onTextFieldChange);
   useEffect(() => {
     onTextFieldChangeRef.current = onTextFieldChange;
@@ -340,6 +352,15 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const updateCursor = (x?: number, y?: number) => {
     const hit = hitRef.current;
     if (!hit) return;
+    if (typeof x === 'number' && typeof y === 'number') {
+      const rect = hit.getBoundingClientRect();
+      const clientX = rect.left + x;
+      const clientY = rect.top + y;
+      pointerClientRef.current = { clientX, clientY };
+      const z = zoomRef.current || 1;
+      const pan = panRef.current;
+      pointerWorldRef.current = { x: (x - pan.x) / z, y: (y - pan.y) / z };
+    }
     
     // If resizing, show appropriate resize cursor
     if (resizingTextFieldRef.current) {
@@ -1674,6 +1695,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     renderPreview();
     updateCursor();
     updateTextInputPosition();
+    syncPointerWorldFromClient();
     drawBrushCursorOnly();
   }
 
