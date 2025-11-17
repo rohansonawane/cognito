@@ -28,7 +28,16 @@
 | **Zero-config local dev** | `npm run dev` for the frontend, `npm run dev` for the server—no monorepo gymnastics. |
 | **Production ready** | Secure Express API with rate limiting, CORS, dotenv, and deploy scripts for AWS, Render, Netlify, etc. |
 
-> **Prototype status:** this is our first public prototype. Expect rapid iterations, UI/UX polish, and frequent new features based on community feedback.
+## 📊 Snapshot Dashboard
+
+| Metric | Value |
+| --- | --- |
+| Supported tools | 18 brushes/shapes + smart text |
+| AI providers | OpenAI GPT-4o-mini, Google Gemini 1.5 Flash |
+| Max canvas size | Unlimited (vector history with streaming) |
+| Undo capacity | 60 named snapshots (configurable) |
+| Default rate limit | 10 requests / 24h / IP |
+| Supported deploy targets | AWS EC2, Netlify, Render, Vercel, Railway, Fly.io |
 
 ## 📸 Screenshots
 
@@ -92,36 +101,6 @@ sequenceDiagram
 ```
 
 </details>
-
-## 🔭 Future Roadmap
-
-| Initiative | Description | Status |
-| --- | --- | --- |
-| UI/UX Evolution | Redesign toolbars, improve accessibility, add collaborative cursors | In planning |
-| Expanded LLM Catalog | Support Llama, Mistral, local deployments, and custom fine-tunes | In planning |
-| Performance & Efficiency | Optimize rendering, caching, and memory footprint for large boards | In planning |
-| Accounts & Dashboards | User profiles, analytics, saved canvases, organization controls | In planning |
-| Cognito Notebooks | Persistent notebooks for storing boards, AI responses, and reflections | In planning |
-| Native Mobile Apps | First-party Android/iOS clients with offline mode and pen support | In planning |
-| Security & Compliance | Roles, SSO, audit logs, encryption at rest, enterprise readiness | In planning |
-| Document Workbench | Annotate PDFs/notes, attach them as sources, cite references in AI output | In planning |
-| Knowledge Grounding | Custom “reference packs” so AI answers stay within provided context | In planning |
-| Learning Intelligence | Personalized suggestions as the system learns (opt-in) from usage patterns | In planning |
-| Sharing & Organization | Categories, tags, and filters for distributing notes to classes or teams | In planning |
-| Classroom Mode | Allow teachers to broadcast boards, collect submissions, and review collaboratively | In planning |
-| Immersive/VR Whiteboard | Experimental 3D collaboration for labs and design studios | Under research |
-| Bring-Your-Own LLM | Self-hosted or on-prem LLM integration for full data control | In planning |
-
-Have an idea or want to drive one of these initiatives? Open an issue or reach out—we’d love to collaborate.
-
-## 📚 Use Cases & Integrations
-
-- **Student note-taking companion**: Embed Cognito into your LMS or classroom portal so students can take handwritten notes, annotate diagrams, and query AI without switching tabs.
-- **Team knowledge canvas**: Product and engineering teams can brainstorm flows, mark up screenshots, then capture AI-generated summaries to share.
-- **Document overlay (coming soon)**: Drop PDFs or slides, write directly on top, and send context to AI—including references so answers stay grounded in provided material.
-- **Learning systems**: Cognito can learn from user sessions (with consent) to tailor prompts, suggest templates, and recommend next steps.
-- **Sharing & organization**: Notes can be shared with classmates, teachers, or teammates with categories, tags, and date filters for easy retrieval.
-- **Extended platforms**: Roadmap includes teacher broadcast mode, VR collaboration, mobile apps, and optional on-device or self-hosted LLMs for privacy-first deployments.
 
 ## ✨ Features
 
@@ -244,10 +223,10 @@ Have an idea or want to drive one of these initiatives? Open an issue or reach o
 - **GitHub Actions** - CI/CD (optional)
 
 ## 📋 Table of Contents
-- [Overview](#-overview)
+- [Overview](#overview)
+- [Snapshot Dashboard](#-snapshot-dashboard)
 - [Architecture Overview](#-architecture-overview)
 - [Screenshots](#-screenshots)
-- [Use Cases & Integrations](#-use-cases--integrations)
 - [Features](#-features)
 - [Tech Stack](#️-tech-stack)
 - [Quick Start](#-quick-start)
@@ -255,7 +234,6 @@ Have an idea or want to drive one of these initiatives? Open an issue or reach o
 - [Configuration](#-configuration)
 - [Deployment](#-deployment)
 - [Usage Guide](#-usage-guide)
-- [Future Roadmap](#-future-roadmap)
 - [API Reference](#-api-reference)
 - [Security](#-security)
 - [Contributing](#-contributing)
@@ -263,7 +241,7 @@ Have an idea or want to drive one of these initiatives? Open an issue or reach o
 
 ## 🎯 Overview
 
-AI Canvas Lab (codename Cognito) is a cross-platform whiteboard application that combines powerful drawing tools with AI-powered analysis. Whether you're sketching diagrams, solving math problems, or creating wireframes, the AI can provide insights, explanations, and solutions.
+AI Canvas Lab (codename Cognito) is a cross-platform whiteboard application that combines powerful drawing tools with AI-powered analysis. This is only the **first prototype**, focused on validating the experience of sketching, annotating, and asking AI for instant help. Whether you're solving math, drafting UI diagrams, or preparing classroom notes, Cognito bridges pen-and-paper workflows with modern AI.
 
 ### Key Capabilities
 - **Sketch & Draw** - Professional-grade drawing tools with multiple brush types and shapes
@@ -271,6 +249,17 @@ AI Canvas Lab (codename Cognito) is a cross-platform whiteboard application that
 - **Math Solving** - Upload math problems and get step-by-step solutions
 - **Diagram Analysis** - Understand and improve UI wireframes and diagrams
 - **Note Taking** - Capture ideas with AI-powered summarization
+
+## 📚 Use Cases & Integrations
+
+| Scenario | How Cognito helps |
+| --- | --- |
+| **Student note-taking** | Drop class diagrams, handwrite formulas, then ask AI to summarize, explain, or quiz you. |
+| **LMS/EdTech integration** | Embed the canvas so students can make notes, collaborate, and access AI feedback right inside your platform. |
+| **Team retros & brainstorms** | Capture messy whiteboard sessions, then generate structured summaries, action items, and TODOs. |
+| **Design critiques** | Annotate UI screenshots and let AI describe pain points or suggest improvements. |
+
+> We’re also planning deeper document workflows: import PDFs, write on them, run AI analysis with reference data, and keep everything organized by tags, date, and category.
 
 ## 🚀 Quick Start
 
@@ -486,6 +475,17 @@ Create `server/.env` with the following variables:
 - **Clear Canvas** - Reset to blank canvas
 </details>
 
+## 🧪 Troubleshooting & Support
+
+| Issue | Fix |
+| --- | --- |
+| AI requests fail | Confirm provider API keys, check rate limits, and verify server logs. |
+| Cursor feels offset after zooming | Refresh the page; the brush cursor now recalculates using world coordinates—if it persists, ensure no browser extensions are injecting overlays. |
+| Mobile gestures lag | Disable unnecessary animations in settings, or reduce brush size for lower memory devices. |
+| Deployment errors | Run `npm run build` in both `server/` and `web/`, then restart PM2; check `pm2 logs ai-canvas`. |
+
+Need help? Open an issue with screenshots/logs and we’ll respond quickly.
+
 ## 🔌 API Reference
 
 <details>
@@ -562,19 +562,48 @@ Analyze an image with AI.
 - ✅ CloudTrail audit logging
 </details>
 
+## 🗂️ Project Management
+
+We track work publicly through:
+
+- **Issues** for bugs, enhancements, and documentation tasks.
+- **Milestones** aligned to prototypes and releases (e.g., “Prototype v1”, “Notebook Beta”).
+- **Project Board** grouping backlog → in progress → review → done.
+
+Want to influence the roadmap? Comment on open issues or start a discussion—community feedback guides what we tackle next.
+
+## 🔮 Future Roadmap
+
+The current release is our *first prototype*. Here’s what’s planned:
+
+- **UI/UX polish**: smoother gestures, richer theming, contextual toolbars.
+- **More LLM models**: Anthropic Claude, Azure OpenAI, plus bring-your-own endpoint.
+- **Performance & security**: optimized canvas diffing, stricter CSP, audit logging.
+- **User accounts & dashboards**: sign-in, recent boards, analytics.
+- **Notebooks**: persistent spaces to save boards, tag them, and reopen anytime.
+- **Native apps**: dedicated Android & iOS clients with offline mode.
+- **Document workflows**: import PDFs/Docs, annotate inline, process with AI, and cite sections in responses.
+- **Contextual references**: upload doc packs so AI answers only from provided materials.
+- **Learning loops**: AI adapts to user corrections; optional personalization.
+- **Sharing & collaboration**: share notes, teachers broadcasting boards to students, note sorting by category/date, comments.
+- **Immersive/VR mode**: render the canvas inside virtual classrooms or labs.
+- **Local/Custom LLMs**: integrate on-device or self-hosted models for private deployments.
+
+💡 **Use case spotlight**: Embed Cognito in your LMS so students can take AI-assisted notes, share them with classmates, and even receive teacher feedback—all in one place.
+
 ## 🤝 Contributing
 
-We love collaborating with educators, engineers, and curious makers. Here’s how you can help:
+We welcome code, docs, design ideas, and research notes! Here’s how to contribute:
 
-- **Issues**: Spot a bug, rough edge, or idea? Open an issue with as much detail as possible.
-- **Pull requests**: Fork the repo, create a feature branch (`git checkout -b feature/awesome`), commit, and open a PR. Screenshots or Loom demos are extra helpful.
-- **Discussions**: Not sure where something fits? Start a discussion or drop a note in the relevant issue.
-- **Docs & translations**: Improve guides, translate UI copy, or add tutorials—documentation PRs are always welcome.
+1. **Open an issue** for bugs, feature requests, or UX proposals.
+2. **Fork** the repo and create a branch (`git checkout -b feature/amazing`).
+3. **Commit** with clear messages and add tests when possible.
+4. **Open a Pull Request** describing the change and screenshots/gifs if UI-related.
+5. **Join the discussion** in issues or start new ones—suggestions and Q&A are encouraged.
 
-### Code of Conduct
+### Code of Conduct (Summary)
 
-Please help us keep the community welcoming. Be respectful, assume good intent, and avoid harassment or discrimination of any kind. By contributing, you agree to follow our Code of Conduct (if you don’t see `CODE_OF_CONDUCT.md` yet, treat this section as our interim pledge—one is on the roadmap).
-
+We are committed to a respectful, inclusive environment. Be kind, assume positive intent, and report any harassment via GitHub issues or email. Full details are in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) (add your contact info there if missing).
 
 ## 📄 License
 
