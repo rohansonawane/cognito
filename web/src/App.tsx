@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { markdownToHtml } from './utils/markdown';
 import { CanvasBoard, CanvasBoardRef, HistorySnapshot, type BrushKind, type CanvasTextField } from './components/CanvasBoard';
 import { analyze } from './ai/api';
 import logoImage from './assets/Logo.png';
@@ -994,7 +995,7 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  aiText
+                  <div dangerouslySetInnerHTML={{ __html: markdownToHtml(aiText) }} />
                 )}
               </div>
             </div>
@@ -1030,7 +1031,7 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  aiText
+                  <div dangerouslySetInnerHTML={{ __html: markdownToHtml(aiText) }} />
                 )}
               </div>
             </div>

@@ -205,16 +205,14 @@ function sanitizePrompt(prompt) {
 function toPlainText(input) {
   if (!input || typeof input !== 'string') return '';
   let s = input;
-  // Remove LaTeX delimiters and code ticks
+  // Remove LaTeX delimiters (keep content)
   s = s.replace(/\\\[|\\\]|\\\(|\\\)/g, '');
   s = s.replace(/\$\$([\s\S]*?)\$\$/g, '$1');
-  s = s.replace(/`+/g, '');
-  // Remove markdown bullets/numbering prefixes
-  s = s.replace(/^\s*[-*]\s+/gm, '');
-  s = s.replace(/^\s*\d+\.\s+/gm, '');
-  // Collapse multiple spaces/newlines
-  s = s.replace(/\s+\n/g, '\n').replace(/\n{2,}/g, '\n').replace(/[ \t]{2,}/g, ' ');
-  // Trim and ensure single-line paragraphs
+  // Preserve markdown formatting - don't strip it
+  // Keep markdown bullets, numbers, code blocks, bold, italic
+  // Only normalize excessive whitespace (more than 2 newlines)
+  s = s.replace(/\n{3,}/g, '\n\n'); // Max 2 consecutive newlines
+  // Preserve intentional spacing
   s = s.trim();
   return s;
 }
