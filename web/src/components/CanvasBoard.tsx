@@ -1460,7 +1460,9 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         default: return sizeRef.current;
       }
     })();
-    const radiusCss = Math.max(2, baseSize / 2);
+    const z = zoomRef.current || 1;
+    const displaySize = baseSize / z;
+    const radiusCss = Math.max(2, displaySize / 2);
     const radiusDevice = radiusCss * dpr;
     const cx = pointer.x * dpr;
     const cy = pointer.y * dpr;
@@ -1651,6 +1653,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     renderPreview();
     updateCursor();
     updateTextInputPosition();
+    drawBrushCursorOnly();
   }
 
   function drawStrokes(ctx: CanvasRenderingContext2D, z: number) {
