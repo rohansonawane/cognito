@@ -835,7 +835,7 @@ export default function App() {
                           onTouchEnd={handleHeightSliderCommit}
                           className="size-slider"
                         />
-                      </div>
+              </div>
                     </>
                   ) : (
                     <p className="tool-hint">Select a text field to adjust its width and height.</p>
@@ -979,7 +979,7 @@ export default function App() {
                       <section key={section.slug} className="ai-section" data-section={section.slug}>
                         <span className="ai-section-label">{section.label}</span>
                         {section.items.length === 0 ? (
-                          <p className="ai-section-text">—</p>
+                          <p className="ai-section-text">-</p>
                         ) : section.isList ? (
                           <ul className="ai-section-list">
                             {section.items.map((item, idx) => (
@@ -1015,7 +1015,7 @@ export default function App() {
                       <section key={section.slug} className="ai-section" data-section={section.slug}>
                         <span className="ai-section-label">{section.label}</span>
                         {section.items.length === 0 ? (
-                          <p className="ai-section-text">—</p>
+                          <p className="ai-section-text">-</p>
                         ) : section.isList ? (
                           <ul className="ai-section-list">
                             {section.items.map((item, idx) => (
@@ -1047,18 +1047,18 @@ export default function App() {
               <div className="integration-headline">
                 <h2 id="integration-title">Bring the AI canvas into your product</h2>
                 <p>
-                  Deliver real-time visual intelligence inside your app. Empower teams to sketch, annotate, and receive AI-crafted insights instantly—whether they&rsquo;re solving equations, designing interfaces, or collaborating across devices.
+                  Deliver real-time visual intelligence inside your app. Empower teams to sketch, annotate, and receive AI-crafted insights instantly - whether they&rsquo;re solving equations, designing interfaces, or collaborating across devices.
                 </p>
               </div>
               <div className="integration-rail">
                 <div className="integration-stack-wrapper">
-                  <div className="integration-stack" aria-label="Supported tech stack">
-                    {techStack.map(({ name, slug, icon }) => (
-                      <div key={slug} className={`stack-chip ${slug}`}>
-                        <span className="stack-chip__icon">{icon}</span>
-                        <span className="stack-chip__label">{name}</span>
-                      </div>
-                    ))}
+                <div className="integration-stack" aria-label="Supported tech stack">
+                  {techStack.map(({ name, slug, icon }) => (
+                    <div key={slug} className={`stack-chip ${slug}`}>
+                      <span className="stack-chip__icon">{icon}</span>
+                      <span className="stack-chip__label">{name}</span>
+                    </div>
+                  ))}
                     {/* Duplicate for seamless loop */}
                     {techStack.map(({ name, slug, icon }) => (
                       <div key={`${slug}-dup`} className={`stack-chip ${slug}`}>

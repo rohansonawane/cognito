@@ -26,7 +26,7 @@ export function ColorPicker({ value, onChange, swatches = DEFAULTS, inlineHex = 
     
     // Use a small delay to allow button click to process first
     const timeoutId = setTimeout(() => {
-      document.addEventListener('mousedown', onDoc);
+    document.addEventListener('mousedown', onDoc);
       document.addEventListener('touchstart', onDoc);
     }, 100);
     

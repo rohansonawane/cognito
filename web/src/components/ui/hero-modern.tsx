@@ -361,7 +361,7 @@ function HeroOrbitDeck() {
                 {" "}on an AI‑powered canvas.
               </h1>
               <p className={`max-w-2xl text-base md:text-lg ${(palette as any).subtle}`}>
-                Draw with fast, minimal tools — then send your board to AI for explanations or step‑by‑step math. Built with React and Vite, tuned for clarity in light and dark.
+                Draw with fast, minimal tools - then send your board to AI for explanations or step-by-step math. Built with React and Vite, tuned for clarity in light and dark.
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <a
