@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Bolt, Code2, Braces, Layers, Cloud, Sparkles, Menu, X, Sun, Moon, HelpCircle, Mail, MessageSquare, Rocket } from "lucide-react";
+import brandLogo from "../../assets/Logo.png";
+import heroOneLarge from "../../assets/hero/hero-1-1600.jpg";
+import heroOneMedium from "../../assets/hero/hero-1-900.jpg";
+import heroTwoLarge from "../../assets/hero/hero-2-1600.jpg";
+import heroTwoMedium from "../../assets/hero/hero-2-900.jpg";
+import heroThreeLarge from "../../assets/hero/hero-3-1600.jpg";
+import heroThreeMedium from "../../assets/hero/hero-3-900.jpg";
 
 const STYLE_ID = "hero3-animations";
 
@@ -265,9 +272,21 @@ function HeroOrbitDeck() {
   };
 
   const showcaseImages = [
-    { src: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?q=80&w=1920&auto=format&fit=crop", alt: "Cognito canvas preview 1" },
-    { src: "https://images.unsplash.com/photo-1518779578993-ec3579fee39f?q=80&w=1920&auto=format&fit=crop", alt: "Cognito canvas preview 2" },
-    { src: "https://images.unsplash.com/photo-1517694712202-14dd9538aa97?q=80&w=1920&auto=format&fit=crop", alt: "Cognito canvas preview 3" },
+    {
+      src: heroOneLarge,
+      srcSet: `${heroOneMedium} 900w, ${heroOneLarge} 1600w`,
+      alt: "Cognito canvas preview 1",
+    },
+    {
+      src: heroTwoLarge,
+      srcSet: `${heroTwoMedium} 900w, ${heroTwoLarge} 1600w`,
+      alt: "Cognito canvas preview 2",
+    },
+    {
+      src: heroThreeLarge,
+      srcSet: `${heroThreeMedium} 900w, ${heroThreeLarge} 1600w`,
+      alt: "Cognito canvas preview 3",
+    },
   ];
   const [slide, setSlide] = useState(0);
   useEffect(() => {
@@ -306,7 +325,7 @@ function HeroOrbitDeck() {
       <header className="sticky top-3 z-50">
         <div className="mx-auto mb-4 w-auto flex max-w-[1440px] items-center justify-between gap-4 rounded-full border-0 px-5 py-3 shadow glass">
           <a href="/" className="flex items-center gap-3" aria-label="Cognito Home">
-            <img src="/assets/Logo-Bz6l_H5O.png" alt="Cognito" className="h-10 w-auto" />
+            <img src={brandLogo} alt="Cognito" width={120} height={32} className="h-10 w-auto" decoding="async" />
           </a>
           {isDesktop ? (
             <nav className="flex items-center gap-4 text-sm u-subtle">
@@ -471,8 +490,14 @@ function HeroOrbitDeck() {
             <div className="relative w-full pb-[120%] sm:pb-[90%] lg:pb-[72%] float-y">
               <img
                 src={showcaseImages[slide].src}
+                srcSet={showcaseImages[slide].srcSet}
+                sizes="(max-width: 768px) 100vw, (max-width: 1280px) 70vw, 55vw"
                 alt={showcaseImages[slide].alt}
-                loading="lazy"
+                width={1600}
+                height={1067}
+                loading={slide === 0 ? 'eager' : 'lazy'}
+                fetchPriority={slide === 0 ? 'high' : 'auto'}
+                decoding="async"
                 className="absolute inset-0 h-full w-full object-cover grayscale transition duration-700 ease-out hover:scale-[1.03]"
               />
               <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/50 mix-blend-soft-light dark:from-white/10" />

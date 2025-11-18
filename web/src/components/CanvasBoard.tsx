@@ -45,6 +45,7 @@ type Props = {
   showGrid?: boolean;
   gridSize?: number;
   onTextFieldChange?: (field: CanvasTextField | null) => void;
+  panMode?: boolean;
 };
 
 const MAX_HISTORY = 60;
@@ -86,8 +87,10 @@ export type CanvasTextField = {
 const SHAPE_KINDS: ShapeKind[] = ['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon'];
 const SHAPE_SET = new Set<ShapeKind>(SHAPE_KINDS);
 const isShapeBrush = (mode: BrushKind): mode is ShapeKind => SHAPE_SET.has(mode as ShapeKind);
+const HOLD_TO_DRAW_MS = 220;
+const HOLD_MOVE_THRESHOLD_PX = 4;
 
-export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, size, onHistoryUpdate, showGrid = false, gridSize = 24, onTextFieldChange }, ref) => {
+export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, size, onHistoryUpdate, showGrid = false, gridSize = 24, onTextFieldChange, panMode = false }, ref) => {
   const bgRef = useRef<HTMLCanvasElement | null>(null);
   const gridRef = useRef<HTMLCanvasElement | null>(null);
   const drawRef = useRef<HTMLCanvasElement | null>(null);
@@ -129,6 +132,12 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const gridSizeRef = useRef<number>(gridSize);
   const pointerClientRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const pointerWorldRef = useRef<{ x: number; y: number } | null>(null);
+  const isActivelyDrawingRef = useRef<boolean>(false);
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const holdTimerRef = useRef<number | null>(null);
+  const holdPointerIdRef = useRef<number | null>(null);
+  const holdReadyRef = useRef<boolean>(false);
+  const panModeRef = useRef<boolean>(panMode);
 
   function updatePointerRefs(clientX: number, clientY: number) {
     const hit = hitRef.current as HTMLDivElement | null;
@@ -141,6 +150,44 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const pan = panRef.current;
     pointerWorldRef.current = { x: (localX - pan.x) / z, y: (localY - pan.y) / z };
     return { localX, localY };
+  }
+
+  function armHold(pointerId: number) {
+    if (holdTimerRef.current) {
+      window.clearTimeout(holdTimerRef.current);
+    }
+    holdPointerIdRef.current = pointerId;
+    holdReadyRef.current = false;
+    holdTimerRef.current = window.setTimeout(() => {
+      holdReadyRef.current = true;
+    }, HOLD_TO_DRAW_MS) as unknown as number;
+  }
+
+  function cancelHold(pointerId?: number) {
+    if (typeof pointerId === 'number' && holdPointerIdRef.current !== pointerId) {
+      return;
+    }
+    if (holdTimerRef.current) {
+      window.clearTimeout(holdTimerRef.current);
+    }
+    holdTimerRef.current = null;
+    holdPointerIdRef.current = null;
+    holdReadyRef.current = false;
+  }
+
+  function beginDrawingInteraction(e: PointerEvent) {
+    cancelHold();
+    isActivelyDrawingRef.current = true;
+    if (hitRef.current) {
+      if (e.pointerType === 'touch') {
+        hitRef.current.style.touchAction = 'none';
+      }
+      try { (hitRef.current as HTMLDivElement).setPointerCapture?.(e.pointerId); } catch {}
+    }
+    isDrawingRef.current = true;
+    pointsRef.current = [];
+    addPoint(e);
+    renderPreview();
   }
 
   function syncPointerWorldFromClient() {
@@ -158,6 +205,27 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   useEffect(() => {
     onTextFieldChangeRef.current = onTextFieldChange;
   }, [onTextFieldChange]);
+  useEffect(() => {
+    panModeRef.current = !!panMode;
+  }, [panMode]);
+
+  useEffect(() => {
+    const updateDpr = () => {
+      const next = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+      if (Math.abs(next - dprRef.current) < 0.01) return;
+      dprRef.current = next;
+      resize();
+      renderAll();
+      drawBrushCursorOnly();
+    };
+    const mql = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    mql.addEventListener('change', updateDpr);
+    window.addEventListener('resize', updateDpr);
+    return () => {
+      mql.removeEventListener('change', updateDpr);
+      window.removeEventListener('resize', updateDpr);
+    };
+  }, []);
 
   const cloneTextField = (field: TextField): CanvasTextField => ({
     id: field.id,
@@ -670,6 +738,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
 
     const onWheel = (e: WheelEvent) => {
       if (!hitRef.current) return;
+      // Zoom gesture (cmd/ctrl + wheel) always zooms canvas
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const rect = (hitRef.current as HTMLDivElement).getBoundingClientRect();
@@ -688,7 +757,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         applyTransform();
         return;
       }
-      if (Math.abs(e.deltaX) > 0 || Math.abs(e.deltaY) > 0) {
+      // When pan mode is active, consume wheel to pan canvas (like other whiteboard apps)
+      if (panModeRef.current) {
         e.preventDefault();
         const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 120 : 1;
         panRef.current = {
@@ -697,6 +767,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         };
         applyTransform();
       }
+      // Otherwise allow the page to handle scrolling normally
     };
     hit.addEventListener('wheel', onWheel, { passive: false });
 
@@ -740,7 +811,19 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       if (!updated) return;
       const { localX: lx, localY: ly } = updated;
       pointersRef.current.set(e.pointerId, { x: lx, y: ly });
-      try { (hitRef.current as HTMLDivElement).setPointerCapture?.(e.pointerId); } catch {}
+      cancelHold();
+      
+      const panModeActive = panModeRef.current;
+      // For touch/mouse events, track the start position to detect if user is scrolling vs drawing
+      touchStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
+      if (e.pointerType === 'touch') {
+        isActivelyDrawingRef.current = false;
+        if (hitRef.current) {
+          (hitRef.current as HTMLDivElement).style.touchAction = panModeActive ? 'none' : 'pan-y pan-x';
+        }
+      } else {
+        try { (hitRef.current as HTMLDivElement).setPointerCapture?.(e.pointerId); } catch {}
+      }
       // Spacebar or middle-mouse pans
       if (spacePressedRef.current || e.button === 1 || e.button === 2) {
         if (Math.abs((zoomRef.current || 1) - 1) < 1e-3) {
@@ -748,12 +831,20 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         }
         isPanningRef.current = true;
         panStartRef.current = { x: lx, y: ly };
+        // For touch panning, prevent page scroll
+        if (e.pointerType === 'touch') {
+          if (hitRef.current) {
+            (hitRef.current as HTMLDivElement).style.touchAction = 'none';
+          }
+          try { (hitRef.current as HTMLDivElement).setPointerCapture?.(e.pointerId); } catch {}
+        }
         updateCursor();
         pointerClientRef.current = null;
         drawBrushCursorOnly();
         return;
       }
       if (pointersRef.current.size >= 2) {
+        cancelHold();
         isDrawingRef.current = false; pointsRef.current = [];
         const pts = Array.from(pointersRef.current.values());
         const dx = pts[0].x - pts[1].x; const dy = pts[0].y - pts[1].y;
@@ -763,8 +854,19 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         return;
       }
       
+      // If hand/pan tool is active, start panning immediately
+      if (panModeActive) {
+        isPanningRef.current = true;
+        panStartRef.current = { x: lx, y: ly };
+        updateCursor();
+        pointerClientRef.current = null;
+        drawBrushCursorOnly();
+        return;
+      }
+      
       // Handle text tool
       if (brushRef.current === 'text') {
+        cancelHold(e.pointerId);
         if (e.button !== 0 && e.pointerType === 'mouse') return;
         const hit = getTextFieldAtPoint(lx, ly);
         const z = zoomRef.current || 1;
@@ -861,6 +963,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       if (currentBrush === 'text') {
         // Already handled text tool above
         } else {
+          cancelHold(e.pointerId);
           const hit = getTextFieldAtPoint(lx, ly);
           if (hit && hit.field && !hit.handle) {
             const field = hit.field;
@@ -914,15 +1017,46 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         renderAll();
       }
       
-      // Begin drawing with single pointer (mouse or single touch)
+      // Begin drawing with single pointer after hold
       if (e.button!==0 && e.pointerType === 'mouse') return;
-      isDrawingRef.current = true; pointsRef.current = []; addPoint(e); renderPreview();
+      armHold(e.pointerId);
+      return;
     };
     const onMove = (e: PointerEvent) => {
       const updated = updatePointerRefs(e.clientX, e.clientY);
       if (!updated) return;
       const { localX: lx, localY: ly } = updated;
       if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: lx, y: ly });
+      
+      // Hold-to-draw gating
+      if (!panModeRef.current && !isDrawingRef.current && holdPointerIdRef.current === e.pointerId) {
+        if (holdReadyRef.current) {
+          if (touchStartRef.current) {
+            const dx = Math.abs(e.clientX - touchStartRef.current.x);
+            const dy = Math.abs(e.clientY - touchStartRef.current.y);
+            const dist = Math.hypot(dx, dy);
+            if (dist >= HOLD_MOVE_THRESHOLD_PX) {
+              if (e.pointerType === 'touch') {
+                e.preventDefault();
+              }
+              beginDrawingInteraction(e);
+            } else {
+              updateCursor(lx, ly);
+              drawBrushCursorOnly();
+              return;
+            }
+          } else {
+            if (e.pointerType === 'touch') {
+              e.preventDefault();
+            }
+            beginDrawingInteraction(e);
+          }
+        } else {
+          updateCursor(lx, ly);
+          drawBrushCursorOnly();
+          return;
+        }
+      }
       
       // Update cursor based on what we're hovering over
       updateCursor(lx, ly);
@@ -1034,6 +1168,10 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       }
       
       if (isPanningRef.current) {
+        // Prevent page scroll when panning canvas
+        if (e.pointerType === 'touch') {
+          e.preventDefault();
+        }
         const dx = lx - panStartRef.current.x; const dy = ly - panStartRef.current.y;
         panRef.current = { x: panRef.current.x + dx, y: panRef.current.y + dy };
         panStartRef.current = { x: lx, y: ly };
@@ -1043,6 +1181,13 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         return;
       }
       if (pointersRef.current.size >= 2 && pinchStartRef.current) {
+        // Prevent page scroll when pinching/zooming
+        if (e.pointerType === 'touch') {
+          e.preventDefault();
+          if (hitRef.current) {
+            (hitRef.current as HTMLDivElement).style.touchAction = 'none';
+          }
+        }
         const pts = Array.from(pointersRef.current.values());
         const dx = pts[0].x - pts[1].x; const dy = pts[0].y - pts[1].y;
         const dist = Math.hypot(dx, dy) || 1;
@@ -1062,11 +1207,36 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         drawBrushCursorOnly(); 
         return; 
       }
+      
+      // If actively drawing, prevent page scroll
+      if (isActivelyDrawingRef.current && e.pointerType === 'touch') {
+        e.preventDefault();
+      }
+      
       addPoint(e); renderPreview();
     };
     const onUp = (e: PointerEvent) => {
       pointersRef.current.delete(e.pointerId);
       if (pointersRef.current.size < 2) pinchStartRef.current = null;
+      
+      // Restore page scrolling when touch ends
+      if (e.pointerType === 'touch') {
+        const wasDrawing = isActivelyDrawingRef.current;
+        isActivelyDrawingRef.current = false;
+        touchStartRef.current = null;
+        if (hitRef.current) {
+          // Restore page scrolling
+          (hitRef.current as HTMLDivElement).style.touchAction = 'pan-y pan-x';
+        }
+        // Release pointer capture if we had it
+        if (wasDrawing) {
+          try { (hitRef.current as HTMLDivElement).releasePointerCapture?.(e.pointerId); } catch {}
+        }
+        cancelHold(e.pointerId);
+      } else if (e.pointerType === 'mouse') {
+        isActivelyDrawingRef.current = false;
+        cancelHold(e.pointerId);
+      }
       
       if (resizingTextFieldRef.current) {
         resizingTextFieldRef.current = null;
@@ -1132,6 +1302,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         ctxO.setTransform(1,0,0,1,0,0);
         ctxO.clearRect(0, 0, ctxO.canvas.width, ctxO.canvas.height);
       }
+      cancelHold();
     };
     const onResize = () => resize();
     hit.addEventListener('pointerdown', onDown);
@@ -1485,9 +1656,13 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
 
   function renderBrushCursorCore(ctxO: CanvasRenderingContext2D, dpr: number) {
     const pointer = pointerClientRef.current;
-    const pointerWorld = pointerWorldRef.current;
     const mode = brushRef.current;
-    if (!pointer || !pointerWorld) return;
+    if (!pointer) return;
+    const host = hostRef.current;
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    const localX = pointer.clientX - rect.left;
+    const localY = pointer.clientY - rect.top;
     if (isShapeBrush(mode)) return;
     const isFreehand = mode === 'brush' || mode === 'marker' || mode === 'highlighter' || mode === 'eraser';
     if (!isFreehand) return;
@@ -1503,11 +1678,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const displaySize = baseSize / z;
     const radiusCss = Math.max(2, displaySize / 2);
     const radiusDevice = radiusCss * dpr;
-    const pan = panRef.current;
-    const screenX = pointerWorld.x * z + pan.x;
-    const screenY = pointerWorld.y * z + pan.y;
-    const cx = screenX * dpr;
-    const cy = screenY * dpr;
+    const cx = localX * dpr;
+    const cy = localY * dpr;
     ctxO.save();
     ctxO.strokeStyle = mode === 'eraser' ? 'rgba(255,255,255,0.9)' : 'rgba(14,165,233,0.9)';
     ctxO.lineWidth = Math.max(1, 1.5 * dpr);
@@ -1973,7 +2145,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
 
   return (
     <div ref={hostRef} className="board-stack" style={{ position:'relative', width:'100%', height:'100%' }}>
-      <div ref={hitRef} style={{ position:'absolute', inset:0, zIndex:5, touchAction:'none' as any }} />
+      <div ref={hitRef} style={{ position:'absolute', inset:0, zIndex:5, touchAction:'pan-y pan-x' }} />
       {/* Keep background full-size (not scaled) */}
       <canvas ref={bgRef} className="board" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }} aria-label="Background layer" />
       {/* Scale/pan only the drawing layers */}

@@ -1,28 +1,54 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <!-- Google Tag Manager (deferred for performance) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      let gtmLoaded = false;
+      function loadGTM() {
+        if (gtmLoaded) return;
+        gtmLoaded = true;
+        window.dataLayer.push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+        const gtmScript = document.createElement('script');
+        gtmScript.async = true;
+        gtmScript.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-P7CDQNLR';
+        document.head.appendChild(gtmScript);
+      }
+      const deferGTM = window.requestIdleCallback || function (cb) { setTimeout(cb, 1200); };
+      deferGTM(loadGTM);
+      window.addEventListener('load', loadGTM, { once: true });
+    </script>
+    <!-- End Google Tag Manager -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cognito AI Canvas | Sketch, Solve & Describe with AI</title>
-    <meta name="description" content="Cognito is an AI-native canvas that lets you sketch, annotate, solve math and summarize diagrams using OpenAI GPT-4o mini and Google Gemini." />
-    <meta name="keywords" content="AI canvas, drawing app, math solver, diagram analyzer, OpenAI GPT-4o, Google Gemini, Cognito" />
+    <title>Cognito AI Canvas | What It Does & How to Use It</title>
+    <meta name="description" content="Cognito AI Canvas is a lightning-fast whiteboard for sketching ideas, importing screenshots, annotating diagrams, and asking OpenAI GPT-4o mini or Google Gemini for instant explanations, math steps, and summaries." />
+    <meta name="keywords" content="Cognito AI Canvas, how to use cognito, ai whiteboard features, sketch solve summarize, openai gemini canvas" />
     <meta name="author" content="Cognito Team" />
+    <meta name="google-site-verification" content="jVH2cokfT7D6PuFHrYrha-rLpg5cn20sJZ_Fc_qh0t0" />
     <link rel="canonical" href="https://cognito.shuruaat.in/" />
-    <link rel="icon" type="image/png" href="/assets/Logo-Bz6l_H5O.png" />
+    <link rel="icon" type="image/svg+xml" href="/cognito.svg" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://cognito.shuruaat.in/" />
-    <meta property="og:title" content="Cognito AI Canvas | Sketch, Solve & Describe with AI" />
-    <meta property="og:description" content="Draw with precision, collaborate in real time, and ask OpenAI or Gemini for instant feedback directly on your canvas." />
+    <meta property="og:title" content="Cognito AI Canvas | What It Does & How to Use It" />
+    <meta property="og:description" content="Sketch freely, drop screenshots, toggle the grid, and press Ask AI to get GPT-4o mini or Gemini explanations, math steps, and next actions in seconds." />
     <meta property="og:image" content="https://cognito.shuruaat.in/social-card.png" />
     <meta property="og:site_name" content="Cognito AI Canvas" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Cognito AI Canvas | Sketch, Solve & Describe with AI" />
-    <meta name="twitter:description" content="Sketch, solve and annotate with AI on a blazing fast canvas for web, mobile and desktop." />
+    <meta name="twitter:title" content="Cognito AI Canvas | What It Does & How to Use It" />
+    <meta name="twitter:description" content="Learn how Cognito AI Canvas works: draw, annotate, save snapshots, and ask OpenAI or Gemini for structured answers right on the board." />
     <meta name="twitter:image" content="https://cognito.shuruaat.in/social-card.png" />
     <meta name="twitter:creator" content="@cognito_canvas" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preload" href="/fonts/Manrope-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/Manrope-600.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/Manrope-700.woff2" as="font" type="font/woff2" crossorigin>
+    <link
+      rel="preload"
+      as="image"
+      href="https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?q=70&w=1400&auto=format&fit=crop"
+      fetchpriority="high"
+      crossorigin="anonymous"
+    />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -30,7 +56,7 @@
         "name": "Cognito AI Canvas",
         "applicationCategory": "ProductivityApplication",
         "operatingSystem": "Web, iOS, Android, macOS, Windows",
-        "description": "A lightning-fast whiteboard with AI-powered math solving, diagram analysis, and structured note taking.",
+        "description": "Cognito AI Canvas helps you sketch ideas, drop screenshots, annotate diagrams, save history snapshots, and ask OpenAI GPT-4o mini or Google Gemini for instant explanations and math steps.",
         "url": "https://cognito.shuruaat.in/",
         "image": "https://cognito.shuruaat.in/social-card.png",
         "offers": {
@@ -39,10 +65,10 @@
           "priceCurrency": "USD"
         },
         "featureList": [
-          "Freehand drawing, shapes, and smart text blocks",
-          "OpenAI GPT-4o mini and Google Gemini analysis",
-          "History timeline with named snapshots",
-          "PNG export and local board persistence"
+          "Pick brushes, shapes, grid, and color controls from the left toolbar",
+          "Drop screenshots or photos directly onto the canvas for markup",
+          "Press Ask AI to send the board to GPT-4o mini or Gemini for summaries, math steps, or UI critiques",
+          "Save named history snapshots, export PNGs, and keep boards locally in the browser"
         ],
         "creator": {
           "@type": "Organization",
@@ -60,7 +86,7 @@
             "name": "What can Cognito AI Canvas do?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Cognito lets you sketch, drop screenshots, annotate diagrams, and instantly ask AI (OpenAI GPT-4o mini or Google Gemini) for explanations, math solutions, and summaries."
+            "text": "Cognito lets you sketch, drop screenshots, annotate diagrams, toggle the grid, and instantly ask AI (OpenAI GPT-4o mini or Google Gemini) for explanations, math steps, summaries, or improvement tips."
             }
           },
           {
@@ -68,7 +94,7 @@
             "name": "Do I need both OpenAI and Gemini API keys?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "You can use either provider. Add the API keys you have in server/.env and switch providers from the UI at any time."
+            "text": "You can use either provider. Add whichever API keys you have to server/.env (or Secrets Manager) and switch between OpenAI and Gemini from the header drop-down."
             }
           },
           {
@@ -76,7 +102,7 @@
             "name": "Can I self-host Cognito?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Deploy the Express API and React frontend to AWS EC2, Render, Netlify or Vercel using the provided scripts and documentation."
+            "text": "Yes. Deploy the Express API and React frontend to AWS EC2, Render, Netlify, or Vercel with the included scripts. The README explains how to load API keys via Secrets Manager or .env."
             }
           }
         ]
@@ -84,6 +110,9 @@
     </script>
   </head>
   <body>
+    <!-- Google Tag Manager (noscript) -->
+    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-P7CDQNLR" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+    <!-- End Google Tag Manager (noscript) -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

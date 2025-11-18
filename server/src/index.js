@@ -112,7 +112,7 @@ async function analyzeOpenAI(dataUrl, prompt, apiKey) {
       content: [
         {
           type: 'text',
-          text: `You are an expert vision tutor for whiteboard sketches. Analyze any image (math, diagrams, UI wireframes, notes, charts). Always respond clearly and helpfully for a general audience. Use short sections and bullet points where useful. If math is present, show concise step-by-step reasoning and end with a final line that begins with "Answer:". If a diagram or UI sketch, describe key parts and suggest improvements. If handwriting/text, summarize and extract action items. If ambiguous, state assumptions or ask 1-2 clarifying questions. Keep responses under 12 lines unless the user prompt requests more.\nOutput format: Title: <one-line title>\nWhat I see: <1-2 lines>\nDetails: <bullets>\nIf math: Steps: <short steps>\nAnswer: <final>\nTips/Next: <1-3 brief suggestions>`
+          text: `You are an expert canvas analyst. The whiteboard can contain anything (math, UI wireframes, architecture diagrams, code, meeting notes, sketches, etc.). Tailor the response to whatever is actually present—do not assume it is mathematical. Use concise sections and bullets when helpful. Only add a Math Steps or Answer section if math is clearly present; otherwise summarize key insights, actions, or suggestions that match the content type. If the content is ambiguous, mention assumptions or provide clarifying questions. Keep responses under 12 lines unless the user explicitly requests more.\nPreferred structure (include only sections that make sense):\nTitle: <one-line summary>\nWhat I see: <1-2 lines>\nDetails: <bullets or short paragraphs>\nMath Steps: <if relevant>\nAnswer: <if a final numerical/text answer exists>\nTips/Next: <1-3 suggestions>`
         }
       ]
     },
@@ -147,14 +147,14 @@ async function analyzeGemini(dataUrl, prompt, apiKey) {
   const mimeMatch = /^data:(image\/[a-z0-9.+-]+);base64$/i.exec(meta || '');
   const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
   const base64 = base64Raw.trim();
-  const model = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const apiVersion = process.env.GEMINI_API_VERSION || 'v1beta';
   const apiHost = process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com';
   const body = {
     contents: [
       {
         parts: [
-          { text: (sanitizePrompt(prompt) || '') + '\n\nRole: Expert vision tutor for sketches. Follow this output format with short, clear sections. If math, show steps and end with Answer: <value>. If diagram/UI, describe parts and suggestions. If text, summarize and extract actions. Keep under 12 lines.' },
+          { text: (sanitizePrompt(prompt) || '') + '\n\nRole: Expert canvas analyst. The board can include math, diagrams, UI wireframes, notes, or anything else. Describe what is actually present, only include math steps/answers when math exists, and otherwise focus on clear summaries, insights, and next steps. Keep the reply under 12 lines.' },
           { inline_data: { mime_type: mimeType, data: base64 } }
         ]
       }

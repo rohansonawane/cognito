@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect, Suspense } from 'react';
 import { markdownToHtml } from './utils/markdown';
 import { CanvasBoard, CanvasBoardRef, HistorySnapshot, type BrushKind, type CanvasTextField } from './components/CanvasBoard';
 import { analyze } from './ai/api';
@@ -25,10 +25,6 @@ import {
   ChevronDown,
   ArrowUpRight,
   ArrowLeftRight,
-  Github,
-  Linkedin,
-  Mail,
-  Globe,
   Slash,
   Square,
   Circle,
@@ -36,11 +32,17 @@ import {
   Diamond as DiamondIcon,
   Hexagon as HexagonIcon,
   Type,
+  Hand,
 } from 'lucide-react';
 import { ColorPicker } from './components/ColorPicker';
 import { SizeControl } from './components/SizeControl';
+const IntegrationSection = React.lazy(() => import('./components/IntegrationSection'));
+const SiteFooter = React.lazy(() => import('./components/SiteFooter'));
 
 const KNOWN_AI_LABELS = new Set(['Title', 'What I see', 'Details', 'Steps', 'Answer', 'Tips/Next']);
+const ASK_LIMIT = 10;
+const ASK_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ASK_META_KEY = 'ASK_META';
 
 type ParsedAiSection = {
   label: string;
@@ -118,6 +120,11 @@ export default function App() {
   const [promptText, setPromptText] = useState('');
   const [askClicked, setAskClicked] = useState(false);
   const [provider, setProvider] = useState<Provider>('openai');
+  const [askUsage, setAskUsage] = useState<{ count: number; resetAt: number }>(() => ({
+    count: 0,
+    resetAt: Date.now() + ASK_WINDOW_MS,
+  }));
+  const [isHandMode, setIsHandMode] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showHow, setShowHow] = useState(false);
   const howWrapRef = React.useRef<HTMLDivElement | null>(null);
@@ -134,7 +141,38 @@ export default function App() {
   const [showGrid, setShowGrid] = useState(false);
   const [activeHowCard, setActiveHowCard] = useState<string>('quick');
   const [selectedTextField, setSelectedTextField] = useState<CanvasTextField | null>(null);
+  const loadAskMeta = React.useCallback(() => {
+    const now = Date.now();
+    let meta: { count: number; resetAt: number } = { count: 0, resetAt: now + ASK_WINDOW_MS };
+    if (typeof window === 'undefined') return meta;
+    try {
+      const raw = localStorage.getItem(ASK_META_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        meta = {
+          count: typeof parsed.count === 'number' ? parsed.count : 0,
+          resetAt: typeof parsed.resetAt === 'number' ? parsed.resetAt : now + ASK_WINDOW_MS,
+        };
+      }
+    } catch {}
+    if (now > (meta.resetAt || 0)) {
+      meta = { count: 0, resetAt: now + ASK_WINDOW_MS };
+    }
+    try {
+      localStorage.setItem(ASK_META_KEY, JSON.stringify(meta));
+    } catch {}
+    return meta;
+  }, []);
+
+  const saveAskMeta = React.useCallback((meta: { count: number; resetAt: number }) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(ASK_META_KEY, JSON.stringify(meta));
+    } catch {}
+    setAskUsage(meta);
+  }, []);
   const currentYear = new Date().getFullYear();
+  const [shouldLoadMarketing, setShouldLoadMarketing] = useState(false);
   type BrushOption = {
     key: BrushKind;
     label: string;
@@ -279,6 +317,22 @@ export default function App() {
       ]
     },
   ], []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setAskUsage(loadAskMeta());
+  }, [loadAskMeta]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      setShouldLoadMarketing(true);
+      return;
+    }
+    const idle = (window as any).requestIdleCallback || ((cb: () => void) => window.setTimeout(cb, 900));
+    const cancelIdle = (window as any).cancelIdleCallback || ((id: number) => window.clearTimeout(id));
+    const id = idle(() => setShouldLoadMarketing(true));
+    return () => cancelIdle(id);
+  }, []);
+
   useEffect(() => {
   }, [showGrid]);
   useEffect(() => {
@@ -436,7 +490,7 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'light' || saved === 'dark') return saved;
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    return 'dark';
   });
 
   // multipage boards (vector)
@@ -548,13 +602,14 @@ export default function App() {
 
   async function onAnalyze() {
     // client-side soft quota: 10 requests / 24h per browser
-    try {
-      const raw = localStorage.getItem('ASK_META');
-      const meta = raw ? JSON.parse(raw) : { count: 0, resetAt: Date.now() + 24*60*60*1000 };
-      if (Date.now() > (meta.resetAt || 0)) { meta.count = 0; meta.resetAt = Date.now() + 24*60*60*1000; }
-      if (meta.count >= 10) { setShowLimit(true); return; }
-      localStorage.setItem('ASK_META', JSON.stringify({ ...meta, count: meta.count + 1 }));
-    } catch {}
+    const meta = loadAskMeta();
+    if (meta.count >= ASK_LIMIT) {
+      setAskUsage(meta);
+      setShowLimit(true);
+      return;
+    }
+    const nextMeta = { ...meta, count: meta.count + 1 };
+    saveAskMeta(nextMeta);
     const dataUrl = boardRef.current?.exportPng();
     if (!dataUrl) return;
     setIsAnalyzing(true);
@@ -601,10 +656,16 @@ export default function App() {
       <header className="app-header">
         <div className="header-inner">
           <div className="brand">
-            <div className="brand-mark"><img src={logoImage} alt="Cognito logo" /></div>
+            <div className="brand-mark">
+              <img src={logoImage} alt="Cognito logo" width={120} height={32} decoding="async" />
+            </div>
           </div>
           {isMobile ? (
             <div className="header-actions" style={{ display:'flex', gap:8 }}>
+              <select className="btn" value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
+                <option value="openai">OpenAI</option>
+                <option value="gemini">Gemini</option>
+              </select>
               <button className="btn" title="Toggle theme" onClick={() => setTheme((t) => t === 'dark' ? 'light' : 'dark')}>
                 {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
               </button>
@@ -626,6 +687,7 @@ export default function App() {
                 {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
               </button>
               <a className="btn feedback" href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer">Feedback</a>
+              <span className="usage-pill">{Math.max(0, ASK_LIMIT - askUsage.count)} / {ASK_LIMIT} asks left</span>
             </div>
           )}
         </div>
@@ -637,6 +699,7 @@ export default function App() {
               <option value="gemini">Gemini</option>
             </select>
             <a className="btn" href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer" onClick={() => setShowMobileMenu(false)}>Feedback</a>
+            <span className="usage-pill">{Math.max(0, ASK_LIMIT - askUsage.count)} / {ASK_LIMIT} asks left</span>
           </div>
         )}
       </header>
@@ -662,6 +725,13 @@ export default function App() {
                   <button className="icon-btn" title="Undo" onClick={() => boardRef.current?.undo()}><Undo2 size={16} /></button>
                   <button className="icon-btn" title="Redo" onClick={() => boardRef.current?.redo()}><Redo2 size={16} /></button>
                   <button className={`icon-btn ${showHistory ? 'active' : ''}`} title="History" onClick={toggleHistory}><History size={16} /></button>
+                  <button
+                    className={`icon-btn ${isHandMode ? 'active' : ''}`}
+                    title="Pan / Move canvas"
+                    onClick={() => setIsHandMode((v) => !v)}
+                  >
+                    <Hand size={16} />
+                  </button>
                   <button className="icon-btn" title="Save" onClick={() => boardRef.current?.saveBoard?.()}><Save size={16} /></button>
                   <button className="icon-btn" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
                   <label className="icon-btn" title="Add Image">
@@ -756,6 +826,14 @@ export default function App() {
                   <button className="icon-btn" title="Undo" data-tooltip="Undo" onClick={() => boardRef.current?.undo()}><Undo2 size={16} /></button>
                   <button className="icon-btn" title="Redo" data-tooltip="Redo" onClick={() => boardRef.current?.redo()}><Redo2 size={16} /></button>
                   <button className={`icon-btn ${showHistory ? 'active' : ''}`} title="History" data-tooltip="History" onClick={toggleHistory}><History size={16} /></button>
+                  <button
+                    className={`icon-btn ${isHandMode ? 'active' : ''}`}
+                    title="Pan / Move canvas"
+                    data-tooltip="Pan / Move"
+                    onClick={() => setIsHandMode((v) => !v)}
+                  >
+                    <Hand size={16} />
+                  </button>
                   <button className="icon-btn" title="Save" data-tooltip="Save" onClick={() => boardRef.current?.saveBoard?.()}><Save size={16} /></button>
                   <button className="icon-btn" title="Download" data-tooltip="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
                   <label className="icon-btn" title="Add Image" data-tooltip="Add Image">
@@ -868,6 +946,7 @@ export default function App() {
             onHistoryUpdate={handleHistoryUpdate}
             showGrid={showGrid}
             onTextFieldChange={handleTextFieldChange}
+            panMode={isHandMode}
           />
           <div className="canvas-overlay">
             <div className="overlay-row">
@@ -935,7 +1014,7 @@ export default function App() {
             </div>
           )}
           {!isMobile && (
-            <div className="canvas-ask">
+          <div className="canvas-ask">
               <input
                 className="ask-input"
                 placeholder="Ask AI (optional prompt)"
@@ -1039,146 +1118,25 @@ export default function App() {
         )}
       </main>
 
-      <section className="integration-cta" aria-labelledby="integration-title">
-        <div className="integration-inner">
-          <span className="integration-pill">Integrate <span className="integration-brand">Cognito</span></span>
-          <div className="integration-layout">
-            <div className="integration-column">
-              <div className="integration-headline">
-                <h2 id="integration-title">Bring the AI canvas into your product</h2>
-                <p>
-                  Deliver real-time visual intelligence inside your app. Empower teams to sketch, annotate, and receive AI-crafted insights instantly - whether they&rsquo;re solving equations, designing interfaces, or collaborating across devices.
-                </p>
-              </div>
-              <div className="integration-rail">
-                <div className="integration-stack-wrapper">
-                <div className="integration-stack" aria-label="Supported tech stack">
-                  {techStack.map(({ name, slug, icon }) => (
-                    <div key={slug} className={`stack-chip ${slug}`}>
-                      <span className="stack-chip__icon">{icon}</span>
-                      <span className="stack-chip__label">{name}</span>
-                    </div>
-                  ))}
-                    {/* Duplicate for seamless loop */}
-                    {techStack.map(({ name, slug, icon }) => (
-                      <div key={`${slug}-dup`} className={`stack-chip ${slug}`}>
-                        <span className="stack-chip__icon">{icon}</span>
-                        <span className="stack-chip__label">{name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="integration-side">
-              <div className="integration-usecases">
-                {integrationUseCases.map((useCase) => (
-                  <article key={useCase.title} className="usecase-card">
-                    <span className="usecase-icon" aria-hidden="true">{useCase.icon}</span>
-                    <h3>{useCase.title}</h3>
-                  </article>
-                ))}
-              </div>
-              <a className="btn accent integration-action" href="https://forms.gle/EunESTAMAMsato776" target="_blank" rel="noopener noreferrer" title="Request an integration">
-                INTEGRATE NOW
-                <ArrowUpRight size={16} />
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
+      {shouldLoadMarketing && (
+        <Suspense fallback={null}>
+          <IntegrationSection techStack={techStack} useCases={integrationUseCases} />
+        </Suspense>
+      )}
 
-      <footer className="app-footer">
-        <div className="footer-shell">
-            <div className="footer-grid">
-              <div className="footer-brand">
-                <span className="footer-badge">Built for labs &amp; lecture halls</span>
-                <div className="footer-logo" aria-hidden="true">
-                  <img src={logoImage} alt="Cognito logo" />
-                </div>
-              <p className="footer-copy">
-                Sketch complex ideas, annotate experiments, and ship insights faster with an AI-native canvas
-                designed for science and engineering teams.
-              </p>
-              <div className="footer-actions">
-                <a
-                  className="btn-cta footer-cta"
-                    href="https://forms.gle/gzvFHB3RdxW71o9t6"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                    Join the beta
-                  <ArrowUpRight size={16} />
-                </a>
-                <div className="footer-social">
-                  <a
-                    className="footer-social-link"
-                      href="https://www.linkedin.com/in/rohanbsonawane/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                      aria-label="Connect on LinkedIn"
-                  >
-                      <Linkedin size={16} />
-                  </a>
-                  <a
-                    className="footer-social-link"
-                      href="https://www.rohansonawane.tech/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                      aria-label="Visit portfolio"
-                  >
-                      <Globe size={16} />
-                  </a>
-                  <a
-                    className="footer-social-link"
-                      href="https://github.com/rohansonawane/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                      aria-label="View GitHub profile"
-                  >
-                      <Github size={16} />
-                  </a>
-                </div>
-              </div>
-            </div>
-
-              <div className="footer-nav-group">
-                <span className="footer-nav-title">Quick links</span>
-                <ul className="footer-nav-list">
-                  <li><button type="button" className="footer-link" onClick={() => setShowAbout(true)}>Overview</button></li>
-                <li>
-                  <button
-                    type="button"
-                    className="footer-link"
-                      onClick={() => { setShowHow(true); setActiveHowCard('quick'); }}
-                  >
-                      How it works
-                  </button>
-                </li>
-                  <li><a className="footer-link" href="mailto:rohansonawane28@gmail.com">Email support</a></li>
-                  <li><a className="footer-link" href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer">Feedback</a></li>
-              </ul>
-            </div>
-
-            <div className="footer-card">
-              <span className="footer-card-title">Stay in the loop</span>
-              <p>
-                Monthly drops on new lab-ready brushes, equation templates, and AI workflows tailored for research teams.
-              </p>
-                <a className="footer-mail" href="mailto:rohansonawane28@gmail.com">
-                <Mail size={16} />
-                  rohansonawane28@gmail.com
-              </a>
-            </div>
-          </div>
-
-          <div className="footer-bottom">
-            <span className="footer-bottom-copy">
-              © {currentYear} Cognito Labs · Built with <span className="heart-anim">♥</span>
-            </span>
-          </div>
-        </div>
-      </footer>
+      {shouldLoadMarketing && (
+        <Suspense fallback={null}>
+          <SiteFooter
+            logoImage={logoImage}
+            currentYear={currentYear}
+            onShowAbout={() => setShowAbout(true)}
+            onShowHow={() => {
+              setShowHow(true);
+              setActiveHowCard('quick');
+            }}
+          />
+        </Suspense>
+      )}
 
       {showAbout && (
         <div className="about-modal" role="dialog" aria-modal="true" aria-label="About Cognito">

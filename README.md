@@ -359,7 +359,7 @@ Create `server/.env` with the following variables:
 | `MAX_IMAGE_MB` | No | `8` | Maximum image size in MB |
 | `RATE_LIMIT_WINDOW_MS` | No | `86400000` | Rate limit window (24h) |
 | `RATE_LIMIT_MAX` | No | `10` | Max requests per window |
-| `GEMINI_MODEL` | No | `gemini-1.5-flash-latest` | Gemini model name |
+| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model name |
 | `GEMINI_API_VERSION` | No | `v1beta` | Gemini API version |
 | `GEMINI_API_BASE` | No | `https://generativelanguage.googleapis.com` | Gemini API base URL |
 
@@ -465,6 +465,7 @@ Create `server/.env` with the following variables:
 4. **Optional**: Add a custom prompt
 5. **View results** in the side panel
 6. **Copy** response to clipboard
+7. **Monitor usage** via the `X / 10 requests left today` badge under the Ask AI input (soft client limit resets every 24h per browser)
 
 ### Board Management
 
