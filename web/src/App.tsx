@@ -1,7 +1,7 @@
-import React, { useMemo, useRef, useState, useEffect, Suspense } from 'react';
+import React, { useMemo, useRef, useState, useEffect, useLayoutEffect, Suspense } from 'react';
 import { renderMathOnly } from './utils/markdown';
 import 'katex/dist/katex.min.css';
-import { CanvasBoard, CanvasBoardRef, HistorySnapshot, type BrushKind, type CanvasTextField } from './components/CanvasBoard';
+import { CanvasBoard, CanvasBoardRef, HistorySnapshot, type BrushKind, type CanvasTextField, type CanvasLayer } from './components/CanvasBoard';
 import { analyze } from './ai/api';
 import logoImage from './assets/Logo.png';
 import {
@@ -9,6 +9,10 @@ import {
   Redo2,
   Eraser,
   PenLine,
+  Pencil,
+  Highlighter,
+  Palette,
+  SlidersHorizontal,
   Download as DownloadIcon,
   Save,
   Image as ImageIcon,
@@ -17,6 +21,11 @@ import {
   ZoomOut,
   Maximize,
   History,
+  Layers,
+  Eye,
+  EyeOff,
+  Plus,
+  ChevronUp,
   Sun,
   Moon,
   Send,
@@ -34,11 +43,11 @@ import {
   Hexagon as HexagonIcon,
   Type,
   Hand,
+  Shapes,
 } from 'lucide-react';
 import { ColorPicker } from './components/ColorPicker';
 import { SizeControl } from './components/SizeControl';
-const IntegrationSection = React.lazy(() => import('./components/IntegrationSection'));
-const SiteFooter = React.lazy(() => import('./components/SiteFooter'));
+// Footer removed from this page (will be used on other pages later)
 
 // Preferred/known labels (for ordering + styling). We still accept other labels too,
 // because the AI response depends on the image type.
@@ -382,17 +391,30 @@ export default function App() {
   const howWrapRef = React.useRef<HTMLDivElement | null>(null);
   const [showLimit, setShowLimit] = useState(false);
   const canvasWrapRef = React.useRef<HTMLDivElement | null>(null);
-  const [isToolsOpen, setIsToolsOpen] = useState(false);
-  const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [activeMobilePanel, setActiveMobilePanel] = useState<'tools' | 'brush' | 'color' | 'size' | null>('tools');
   const [historyTimeline, setHistoryTimeline] = useState<HistorySnapshot[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [historyLabel, setHistoryLabel] = useState('');
+  const [layers, setLayers] = useState<CanvasLayer[]>([]);
+  const [activeLayerId, setActiveLayerId] = useState<string>('');
+  const [showLayers, setShowLayers] = useState(false);
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
+  const [editingLayerName, setEditingLayerName] = useState<string>('');
   const [showGrid, setShowGrid] = useState(false);
   const [activeHowCard, setActiveHowCard] = useState<string>('quick');
   const [selectedTextField, setSelectedTextField] = useState<CanvasTextField | null>(null);
+  type ToolPanelKey = 'shapes' | 'color' | 'size';
+  const [activeToolPanel, setActiveToolPanel] = useState<ToolPanelKey | null>(null);
+  const [toolAnchorRect, setToolAnchorRect] = useState<{ left: number; right: number; top: number; bottom: number; width: number; height: number } | null>(null);
+  const [toolPanelSide, setToolPanelSide] = useState<'right' | 'left'>('right');
+  // Start off-screen to avoid a one-frame flash before layout measurements run.
+  const [toolPanelLeft, setToolPanelLeft] = useState<number>(-9999);
+  const [toolPanelTop, setToolPanelTop] = useState<number>(-9999);
+  const [toolArrowTop, setToolArrowTop] = useState<number>(0);
+  const toolsDockRef = useRef<HTMLDivElement | null>(null);
+  const toolsPanelRef = useRef<HTMLDivElement | null>(null);
   const loadAskMeta = React.useCallback(() => {
     const now = Date.now();
     let meta: { count: number; resetAt: number } = { count: 0, resetAt: now + ASK_WINDOW_MS };
@@ -432,8 +454,7 @@ export default function App() {
     } catch {}
     setAskUsage(meta);
   }, []);
-  const currentYear = new Date().getFullYear();
-  const [shouldLoadMarketing, setShouldLoadMarketing] = useState(false);
+  // const currentYear = new Date().getFullYear();
   type BrushOption = {
     key: BrushKind;
     label: string;
@@ -443,6 +464,8 @@ export default function App() {
   const brushOptions = useMemo<BrushOption[]>(
     () => [
       { key: 'brush', label: 'Brush', Icon: PenLine },
+      { key: 'marker', label: 'Marker', Icon: Pencil },
+      { key: 'highlighter', label: 'Highlighter', Icon: Highlighter },
       { key: 'eraser', label: 'Eraser', Icon: Eraser },
       { key: 'line', label: 'Line', glyph: '／' },
       { key: 'rect', label: 'Rectangle', glyph: '▭' },
@@ -583,16 +606,7 @@ export default function App() {
     setAskUsage(loadAskMeta());
   }, [loadAskMeta]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      setShouldLoadMarketing(true);
-      return;
-    }
-    const idle = (window as any).requestIdleCallback || ((cb: () => void) => window.setTimeout(cb, 900));
-    const cancelIdle = (window as any).cancelIdleCallback || ((id: number) => window.clearTimeout(id));
-    const id = idle(() => setShouldLoadMarketing(true));
-    return () => cancelIdle(id);
-  }, []);
+  // Footer/marketing lazy-loading removed for this page.
 
   useEffect(() => {
   }, [showGrid]);
@@ -823,12 +837,34 @@ export default function App() {
     setShowHistory((prev) => {
       const next = !prev;
       if (next) {
+        setShowLayers(false);
         const snapshot = boardRef.current?.getHistoryTimeline?.();
         if (snapshot) setHistoryTimeline(snapshot);
       }
       return next;
     });
   }, []);
+
+  const refreshLayers = React.useCallback(() => {
+    const nextLayers = boardRef.current?.getLayers?.() || [];
+    const activeId = boardRef.current?.getActiveLayerId?.() || '';
+    setLayers(nextLayers);
+    setActiveLayerId(activeId || (nextLayers[0]?.id ?? ''));
+  }, []);
+
+  const toggleLayers = React.useCallback(() => {
+    setShowLayers((prev) => {
+      const next = !prev;
+      if (next) {
+        setShowHistory(false);
+        refreshLayers();
+      } else {
+        setEditingLayerId(null);
+        setEditingLayerName('');
+      }
+      return next;
+    });
+  }, [refreshLayers]);
 
   function onJumpToHistory(entryId: string) {
     boardRef.current?.jumpToHistory?.(entryId);
@@ -857,6 +893,125 @@ export default function App() {
     localStorage.setItem('theme', theme);
     try { window.dispatchEvent(new CustomEvent('themechange', { detail: { theme } })); } catch {}
   }, [theme]);
+
+  // Desktop tool panels: close on outside click or Esc (software-like behavior).
+  useEffect(() => {
+    if (!activeToolPanel) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node;
+      if (toolsDockRef.current?.contains(target)) return;
+      if (toolsPanelRef.current?.contains(target)) return;
+      setActiveToolPanel(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveToolPanel(null);
+    };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('touchstart', onDown, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('touchstart', onDown, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [activeToolPanel]);
+
+  const toggleToolPanel = (key: ToolPanelKey) => (e: React.MouseEvent<HTMLElement>) => {
+    if (activeToolPanel === key) {
+      setActiveToolPanel(null);
+      return;
+    }
+    const btnRect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const anchorY = btnRect.top + btnRect.height / 2;
+    setToolAnchorRect({
+      left: btnRect.left,
+      right: btnRect.right,
+      top: btnRect.top,
+      bottom: btnRect.bottom,
+      width: btnRect.width,
+      height: btnRect.height,
+    });
+    // Immediate positioning: open to the right of the clicked icon, vertically centered.
+    setToolPanelSide('right');
+    setToolPanelLeft(btnRect.right + 10);
+    setToolPanelTop(Math.max(12, anchorY - 140));
+    setToolArrowTop(140);
+    setActiveToolPanel(key);
+  };
+
+  const selectBrushTool = (next: BrushKind) => {
+    setBrush(next);
+    setIsHandMode(false);
+    // If user picked something from a popover menu, close it (pro-app behavior).
+    setActiveToolPanel(null);
+  };
+
+  const isShapeSelected = useMemo(() => {
+    return (
+      brush === 'line' ||
+      brush === 'rect' ||
+      brush === 'ellipse' ||
+      brush === 'arrow' ||
+      brush === 'double-arrow' ||
+      brush === 'triangle' ||
+      brush === 'diamond' ||
+      brush === 'hexagon'
+    );
+  }, [brush]);
+
+  // Keep the floating tool panel anchored to the clicked dock icon and clamped within the viewport.
+  useLayoutEffect(() => {
+    if (!activeToolPanel) return;
+    const panel = toolsPanelRef.current;
+    if (!panel || !toolAnchorRect) return;
+
+    const recalc = () => {
+      const panelW = panel.offsetWidth || 0;
+      const panelH = panel.offsetHeight || 0;
+      if (!panelW) return;
+      const PAD = 12;
+      const GAP = 10;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const anchorCenterY = toolAnchorRect.top + toolAnchorRect.height / 2;
+
+      // Prefer right side of the clicked icon; if it doesn't fit, flip to left.
+      const rightLeft = toolAnchorRect.right + GAP;
+      const leftLeft = toolAnchorRect.left - GAP - panelW;
+      let side: 'right' | 'left' = 'right';
+      if (rightLeft + panelW <= vw - PAD) side = 'right';
+      else if (leftLeft >= PAD) side = 'left';
+      else {
+        // If neither fits cleanly, choose the side with more room.
+        const roomRight = (vw - PAD) - rightLeft;
+        const roomLeft = (toolAnchorRect.left - GAP) - PAD;
+        side = roomRight >= roomLeft ? 'right' : 'left';
+      }
+
+      const preferredLeft = side === 'right' ? rightLeft : leftLeft;
+      const left = Math.max(PAD, Math.min((vw - PAD - panelW), preferredLeft));
+
+      // Vertically align around the clicked icon, but clamp in viewport.
+      const h = Math.max(1, panelH || 0);
+      const top = Math.max(PAD, Math.min((vh - PAD - h), anchorCenterY - h / 2));
+      const arrow = Math.max(18, Math.min(Math.max(18, h - 18), anchorCenterY - top));
+      setToolPanelLeft(left);
+      setToolPanelTop(top);
+      setToolArrowTop(arrow);
+      setToolPanelSide(side);
+    };
+
+    // Measure immediately (layout effect runs before paint) to keep panel attached to the icon.
+    recalc();
+    // Also re-measure next frame in case content/fonts change the panel size.
+    const raf = window.requestAnimationFrame(recalc);
+    const onResize = () => recalc();
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [activeToolPanel, toolAnchorRect]);
 
   const colors = useMemo(
     () => ['#FFFFFF', '#000000', '#00F0C8', '#00C2A8', '#FF6B6B', '#FFD166', '#06D6A0', '#118AB2', '#9B5DE5', '#F15BB5', '#FEE440', '#00BBF9'],
@@ -950,7 +1105,7 @@ export default function App() {
             </div>
           </div>
           {isMobile ? (
-            <div className="header-actions" style={{ display:'flex', gap:8 }}>
+            <div className="header-actions">
               <select className="btn" value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
                 <option value="openai">OpenAI</option>
                 <option value="gemini">Gemini</option>
@@ -1014,12 +1169,20 @@ export default function App() {
                   <button className="icon-btn" title="Undo" onClick={() => boardRef.current?.undo()}><Undo2 size={16} /></button>
                   <button className="icon-btn" title="Redo" onClick={() => boardRef.current?.redo()}><Redo2 size={16} /></button>
                   <button className={`icon-btn ${showHistory ? 'active' : ''}`} title="History" onClick={toggleHistory}><History size={16} /></button>
+                  <button className={`icon-btn ${showLayers ? 'active' : ''}`} title="Layers" onClick={toggleLayers}><Layers size={16} /></button>
                   <button
                     className={`icon-btn ${isHandMode ? 'active' : ''}`}
                     title="Pan / Move canvas"
                     onClick={() => setIsHandMode((v) => !v)}
                   >
                     <Hand size={16} />
+                  </button>
+                  <button
+                    className={`icon-btn ${showGrid ? 'active' : ''}`}
+                    title={showGrid ? 'Hide grid' : 'Show grid'}
+                    onClick={() => setShowGrid((v) => !v)}
+                  >
+                    <GridIcon size={16} />
                   </button>
                   <button className="icon-btn" title="Save" onClick={() => boardRef.current?.saveBoard?.()}><Save size={16} /></button>
                   <button className="icon-btn" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
@@ -1028,13 +1191,6 @@ export default function App() {
                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onPickImage(e.target.files)} />
                   </label>
                   <button className="icon-btn" title="Clear Canvas" onClick={() => boardRef.current?.clear()}><Trash2 size={16} /></button>
-                  <button
-                    className={`icon-btn ${showGrid ? 'active' : ''}`}
-                    title={showGrid ? 'Hide grid' : 'Show grid'}
-                    onClick={() => setShowGrid((v) => !v)}
-                  >
-                    <GridIcon size={16} />
-                  </button>
                 </div>
               )}
               {activeMobilePanel==='brush' && (
@@ -1108,108 +1264,193 @@ export default function App() {
               )}
             </div>
           ) : (
-            <>
-              <div className="tool-group">
-                <label className="tool-label">Tools</label>
-                <div className="icon-row">
-                  <button className="icon-btn" title="Undo" data-tooltip="Undo" onClick={() => boardRef.current?.undo()}><Undo2 size={16} /></button>
-                  <button className="icon-btn" title="Redo" data-tooltip="Redo" onClick={() => boardRef.current?.redo()}><Redo2 size={16} /></button>
-                  <button className={`icon-btn ${showHistory ? 'active' : ''}`} title="History" data-tooltip="History" onClick={toggleHistory}><History size={16} /></button>
-                  <button
-                    className={`icon-btn ${isHandMode ? 'active' : ''}`}
-                    title="Pan / Move canvas"
-                    data-tooltip="Pan / Move"
-                    onClick={() => setIsHandMode((v) => !v)}
-                  >
-                    <Hand size={16} />
-                  </button>
-                  <button className="icon-btn" title="Save" data-tooltip="Save" onClick={() => boardRef.current?.saveBoard?.()}><Save size={16} /></button>
-                  <button className="icon-btn" title="Download" data-tooltip="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
-                  <label className="icon-btn" title="Add Image" data-tooltip="Add Image">
-                    <ImageIcon size={16} />
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onPickImage(e.target.files)} />
-                  </label>
-                  <button className="icon-btn" title="Clear Canvas" data-tooltip="Clear Canvas" onClick={() => boardRef.current?.clear()}><Trash2 size={16} /></button>
-                  <button
-                    className={`icon-btn ${showGrid ? 'active' : ''}`}
-                    title={showGrid ? 'Hide grid' : 'Show grid'}
-                    data-tooltip={showGrid ? 'Hide grid' : 'Show grid'}
-                    onClick={() => setShowGrid((v) => !v)}
-                  >
-                    <GridIcon size={16} />
-                  </button>
-                </div>
+            <div className="tool-surface">
+              <div className="tool-dock" ref={toolsDockRef}>
+                {/* Primary tools (always visible) */}
+                <button
+                  className={`tool-dock-btn ${brush === 'brush' && !isHandMode ? 'active' : ''}`}
+                  onClick={() => selectBrushTool('brush')}
+                  title="Brush"
+                  aria-pressed={brush === 'brush' && !isHandMode}
+                >
+                  <PenLine size={18} />
+                </button>
+                <button
+                  className={`tool-dock-btn ${brush === 'marker' && !isHandMode ? 'active' : ''}`}
+                  onClick={() => selectBrushTool('marker')}
+                  title="Marker"
+                  aria-pressed={brush === 'marker' && !isHandMode}
+                >
+                  <Pencil size={18} />
+                </button>
+                <button
+                  className={`tool-dock-btn ${brush === 'highlighter' && !isHandMode ? 'active' : ''}`}
+                  onClick={() => selectBrushTool('highlighter')}
+                  title="Highlighter"
+                  aria-pressed={brush === 'highlighter' && !isHandMode}
+                >
+                  <Highlighter size={18} />
+                </button>
+                <button
+                  className={`tool-dock-btn ${brush === 'eraser' && !isHandMode ? 'active' : ''}`}
+                  onClick={() => selectBrushTool('eraser')}
+                  title="Eraser"
+                  aria-pressed={brush === 'eraser' && !isHandMode}
+                >
+                  <Eraser size={18} />
+                </button>
+                <button
+                  className={`tool-dock-btn ${(activeToolPanel === 'shapes' || isShapeSelected) ? 'active' : ''}`}
+                  onClick={toggleToolPanel('shapes')}
+                  title="Shapes"
+                  aria-pressed={activeToolPanel === 'shapes'}
+                >
+                  <Shapes size={18} />
+                </button>
+                <button
+                  className={`tool-dock-btn ${brush === 'text' && !isHandMode ? 'active' : ''}`}
+                  onClick={() => selectBrushTool('text')}
+                  title="Text"
+                  aria-pressed={brush === 'text' && !isHandMode}
+                >
+                  <Type size={18} />
+                </button>
+
+                <div className="tool-dock-sep" aria-hidden="true" />
+
+                {/* Grouped controls */}
+                <button
+                  className={`tool-dock-btn ${isHandMode ? 'active' : ''}`}
+                  onClick={() => setIsHandMode((v) => !v)}
+                  title="Hand / Pan"
+                  aria-pressed={isHandMode}
+                >
+                  <Hand size={18} />
+                </button>
+                <label className="tool-dock-btn" title="Add Image">
+                  <ImageIcon size={18} />
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onPickImage(e.target.files)} />
+                </label>
+                <button
+                  className={`tool-dock-btn ${activeToolPanel === 'color' ? 'active' : ''}`}
+                  onClick={toggleToolPanel('color')}
+                  title="Color"
+                  aria-pressed={activeToolPanel === 'color'}
+                >
+                  <Palette size={18} />
+                </button>
+                <button
+                  className={`tool-dock-btn ${activeToolPanel === 'size' ? 'active' : ''}`}
+                  onClick={toggleToolPanel('size')}
+                  title="Size"
+                  aria-pressed={activeToolPanel === 'size'}
+                >
+                  <SlidersHorizontal size={18} />
+                </button>
               </div>
-              <div className="tool-group">
-                <label className="tool-label">Brush &amp; Shapes</label>
-                <div className="segmented brush-grid">
-                  {brushOptions.map(({ key, Icon, glyph, label }) => (
-                    <button
-                      key={key}
-                      className={`segmented-item ${brush===key?'active':''}`}
-                      onClick={() => setBrush(key)}
-                      title={label}
-                      data-tooltip={label}
-                    >
-                      {Icon ? <Icon size={16} /> : <span className="shape-glyph">{glyph}</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="tool-group">
-                <label className="tool-label">Color</label>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <ColorPicker value={color} onChange={setColor} swatches={colors} />
-                </div>
-              </div>
-              <div className="tool-group">
-                <label className="tool-label">Size <span id="size-value">{size}</span>px</label>
-                <SizeControl value={size} onChange={(n) => setSize(n)} min={1} max={64} />
-              </div>
-              {(brush === 'text' || selectedTextField) && (
-                <div className="tool-group">
-                  <label className="tool-label">Text Field Size</label>
-                  {selectedTextField ? (
+
+              {activeToolPanel && (
+                <div
+                  className="tool-panel"
+                  ref={toolsPanelRef}
+                  data-panel={activeToolPanel}
+                  data-side={toolPanelSide}
+                  style={{
+                    left: `${toolPanelLeft}px`,
+                    top: `${toolPanelTop}px`,
+                    ['--arrow-top' as any]: `${toolArrowTop}px`,
+                  }}
+                  role="dialog"
+                  aria-label="Tool options"
+                >
+                  {activeToolPanel === 'shapes' && (
                     <>
-                      <div className="text-size-control">
-                        <div className="text-size-meta">
-                          <span>Width</span>
-                          <span>{Math.round(selectedTextField.width)} px</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={TEXT_FIELD_WIDTH_MIN}
-                          max={TEXT_FIELD_WIDTH_MAX}
-                          value={clamp(Math.round(selectedTextField.width), TEXT_FIELD_WIDTH_MIN, TEXT_FIELD_WIDTH_MAX)}
-                          onChange={(e) => handleWidthSliderChange(Number(e.target.value))}
-                          onMouseUp={handleWidthSliderCommit}
-                          onTouchEnd={handleWidthSliderCommit}
-                          className="size-slider"
-                        />
+                      <div className="tool-panel-list icons-only">
+                        {([
+                          { key: 'line', label: 'Line', Icon: Slash },
+                          { key: 'rect', label: 'Rectangle', Icon: Square },
+                          { key: 'ellipse', label: 'Ellipse', Icon: Circle },
+                          { key: 'arrow', label: 'Arrow', Icon: ArrowUpRight },
+                          { key: 'double-arrow', label: 'Double Arrow', Icon: ArrowLeftRight },
+                          { key: 'triangle', label: 'Triangle', Icon: TriangleIcon },
+                          { key: 'diamond', label: 'Diamond', Icon: DiamondIcon },
+                          { key: 'hexagon', label: 'Hexagon', Icon: HexagonIcon },
+                        ] as Array<{ key: BrushKind; label: string; Icon: React.ComponentType<{ size?: number }> }>).map(({ key, label, Icon }) => (
+                          <button
+                            key={key}
+                            className={`tool-panel-item icon-only ${brush === key && !isHandMode ? 'active' : ''}`}
+                            onClick={() => selectBrushTool(key)}
+                            title={label}
+                          >
+                            <span className="tool-panel-item-icon"><Icon size={18} /></span>
+                          </button>
+                        ))}
                       </div>
-                      <div className="text-size-control">
-                        <div className="text-size-meta">
-                          <span>Height</span>
-                          <span>{Math.round(selectedTextField.height)} px</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={TEXT_FIELD_HEIGHT_MIN}
-                          max={TEXT_FIELD_HEIGHT_MAX}
-                          value={clamp(Math.round(selectedTextField.height), TEXT_FIELD_HEIGHT_MIN, TEXT_FIELD_HEIGHT_MAX)}
-                          onChange={(e) => handleHeightSliderChange(Number(e.target.value))}
-                          onMouseUp={handleHeightSliderCommit}
-                          onTouchEnd={handleHeightSliderCommit}
-                          className="size-slider"
-                        />
-              </div>
                     </>
-                  ) : (
-                    <p className="tool-hint">Select a text field to adjust its width and height.</p>
                   )}
+
+                  {activeToolPanel === 'color' && (
+                    <>
+                      <div className="tool-panel-title">Color</div>
+                      <ColorPicker value={color} onChange={setColor} swatches={colors} inline={true} />
+                    </>
+                  )}
+
+                  {activeToolPanel === 'size' && (
+                    <>
+                      <div className="tool-panel-title">Size</div>
+                      <label className="tool-label">Stroke <span id="size-value">{size}</span>px</label>
+                      <SizeControl value={size} onChange={(n) => setSize(n)} min={1} max={64} />
+
+                      {(brush === 'text' || selectedTextField) && (
+                        <div style={{ marginTop: 10 }}>
+                          <div className="tool-panel-title" style={{ marginTop: 8 }}>Text Box</div>
+                          {selectedTextField ? (
+                            <>
+                              <div className="text-size-control">
+                                <div className="text-size-meta">
+                                  <span>Width</span>
+                                  <span>{Math.round(selectedTextField.width)} px</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min={TEXT_FIELD_WIDTH_MIN}
+                                  max={TEXT_FIELD_WIDTH_MAX}
+                                  value={clamp(Math.round(selectedTextField.width), TEXT_FIELD_WIDTH_MIN, TEXT_FIELD_WIDTH_MAX)}
+                                  onChange={(e) => handleWidthSliderChange(Number(e.target.value))}
+                                  onMouseUp={handleWidthSliderCommit}
+                                  onTouchEnd={handleWidthSliderCommit}
+                                  className="size-slider"
+                                />
+                              </div>
+                              <div className="text-size-control">
+                                <div className="text-size-meta">
+                                  <span>Height</span>
+                                  <span>{Math.round(selectedTextField.height)} px</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min={TEXT_FIELD_HEIGHT_MIN}
+                                  max={TEXT_FIELD_HEIGHT_MAX}
+                                  value={clamp(Math.round(selectedTextField.height), TEXT_FIELD_HEIGHT_MIN, TEXT_FIELD_HEIGHT_MAX)}
+                                  onChange={(e) => handleHeightSliderChange(Number(e.target.value))}
+                                  onMouseUp={handleHeightSliderCommit}
+                                  onTouchEnd={handleHeightSliderCommit}
+                                  className="size-slider"
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <p className="tool-hint" style={{ margin: 0 }}>Select a text box to resize.</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+
                 </div>
               )}
-            </>
+            </div>
           )}
         </aside>
         {/* tools toggle removed; tools are horizontal above canvas on mobile/tablet */}
@@ -1237,14 +1478,34 @@ export default function App() {
             onTextFieldChange={handleTextFieldChange}
             panMode={isHandMode}
           />
-          <div className="canvas-overlay">
-            <div className="overlay-row">
-              <button className={`icon-btn ${showHistory ? 'active' : ''}`} onClick={toggleHistory} title="History" data-tooltip="History"><History size={16} /></button>
-              <button className="icon-btn" onClick={() => boardRef.current?.setZoom(-0.1)}><ZoomOut size={16} /></button>
-              <button className="icon-btn" onClick={() => boardRef.current?.resetView()}><Maximize size={16} /></button>
-              <button className="icon-btn" onClick={() => boardRef.current?.setZoom(0.1)}><ZoomIn size={16} /></button>
+          {/* Desktop: workflow actions bottom-center */}
+          {!isMobile && (
+            <div className="canvas-actions" role="toolbar" aria-label="Canvas actions">
+              <button className="icon-btn" title="Undo" onClick={() => boardRef.current?.undo()}><Undo2 size={16} /></button>
+              <button className="icon-btn" title="Redo" onClick={() => boardRef.current?.redo()}><Redo2 size={16} /></button>
+              <button className={`icon-btn ${showHistory ? 'active' : ''}`} onClick={toggleHistory} title="History"><History size={16} /></button>
+              <button className={`icon-btn ${showLayers ? 'active' : ''}`} onClick={toggleLayers} title="Layers"><Layers size={16} /></button>
+              <button
+                className={`icon-btn ${showGrid ? 'active' : ''}`}
+                title={showGrid ? 'Hide grid' : 'Show grid'}
+                onClick={() => setShowGrid((v) => !v)}
+              >
+                <GridIcon size={16} />
+              </button>
+              <button className="icon-btn" title="Save" onClick={() => boardRef.current?.saveBoard?.()}><Save size={16} /></button>
+              <button className="icon-btn" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
+              <button className="icon-btn" title="Clear Canvas" onClick={() => boardRef.current?.clear()}><Trash2 size={16} /></button>
             </div>
-          </div>
+          )}
+
+          {/* Desktop: view controls bottom-right */}
+          {!isMobile && (
+            <div className="canvas-zoom" role="toolbar" aria-label="Canvas zoom">
+              <button className="icon-btn" onClick={() => boardRef.current?.setZoom(-0.1)} title="Zoom out"><ZoomOut size={16} /></button>
+              <button className="icon-btn" onClick={() => boardRef.current?.resetView()} title="Reset view"><Maximize size={16} /></button>
+              <button className="icon-btn" onClick={() => boardRef.current?.setZoom(0.1)} title="Zoom in"><ZoomIn size={16} /></button>
+            </div>
+          )}
           {showHistory && (
             <div className="history-popover" role="dialog" aria-label="Canvas history">
               <div className="history-header">
@@ -1302,33 +1563,156 @@ export default function App() {
               </div>
             </div>
           )}
-          {!isMobile && (
-          <div className="canvas-ask">
-              <input
-                className="ask-input"
-                placeholder="Ask AI (optional prompt)"
-                value={promptText}
-                onChange={(e) => setPromptText(e.target.value)}
-              />
-              <button className={`btn accent ask-btn ${isAnalyzing ? 'beam' : ''} ${askClicked ? 'clicked' : ''}`} title="Ask AI" data-tooltip="Ask AI" onClick={onAnalyze} aria-label="Ask AI">
-                <Send size={16} />
-                <span>Ask AI</span>
-              </button>
-            </div>
-          )}
-          {isMobile && (
-            <div className="canvas-ask-mobile">
-              <input
-                id="ask-input-mobile"
-                className="ask-input"
-                placeholder="Ask AI (optional prompt)"
-                value={promptText}
-                onChange={(e) => setPromptText(e.target.value)}
-              />
-              <button className={`btn accent ask-btn ${isAnalyzing ? 'beam' : ''} ${askClicked ? 'clicked' : ''}`} onClick={onAnalyze} aria-label="Ask AI">
-                <Send size={16} />
-                <span>Ask AI</span>
-              </button>
+          {showLayers && (
+            <div className="layers-popover" role="dialog" aria-label="Canvas layers">
+              <div className="layers-header">
+                <span className="layers-title">Layers</span>
+                <div className="layers-header-actions">
+                  <button
+                    className="icon-btn small"
+                    title="Add layer"
+                    aria-label="Add layer"
+                    onClick={() => {
+                      boardRef.current?.createLayer?.();
+                      refreshLayers();
+                    }}
+                  >
+                    <Plus size={16} />
+                  </button>
+                  <button className="icon-btn small" onClick={() => setShowLayers(false)} aria-label="Close layers">✕</button>
+                </div>
+              </div>
+              <div className="layers-hint">
+                New drawing/text goes to the <strong>active</strong> layer.
+                {selectedTextField ? ' Select a layer row to set active, or use ↔ to move the selected text box.' : ''}
+              </div>
+              <div className="layers-list">
+                {(() => {
+                  const layerList = layers.length ? layers : [{ id: 'layer-1', name: 'Layer 1', visible: true }];
+                  const listLen = layerList.length;
+                  return layerList.map((layer, idx) => {
+                  const isActive = layer.id === activeLayerId;
+                  const isEditing = editingLayerId === layer.id;
+                  const canMoveUp = idx > 0;
+                  const canMoveDown = idx < listLen - 1;
+                  const canDelete = listLen > 1;
+                  return (
+                    <div key={layer.id} className={`layers-item ${isActive ? 'active' : ''}`}>
+                      <button
+                        className="icon-btn small"
+                        title={layer.visible ? 'Hide layer' : 'Show layer'}
+                        aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
+                        onClick={() => {
+                          boardRef.current?.toggleLayerVisibility?.(layer.id);
+                          refreshLayers();
+                        }}
+                      >
+                        {layer.visible ? <Eye size={16} /> : <EyeOff size={16} />}
+                      </button>
+
+                      <div className="layers-main">
+                        {!isEditing ? (
+                          <button
+                            type="button"
+                            className="layers-name"
+                            aria-pressed={isActive}
+                            onClick={() => {
+                              boardRef.current?.setActiveLayerId?.(layer.id);
+                              setActiveLayerId(layer.id);
+                              refreshLayers();
+                            }}
+                            onDoubleClick={() => {
+                              setEditingLayerId(layer.id);
+                              setEditingLayerName(layer.name);
+                            }}
+                            title="Click to set active. Double-click to rename."
+                          >
+                            {layer.name}
+                          </button>
+                        ) : (
+                          <input
+                            className="layers-rename"
+                            value={editingLayerName}
+                            autoFocus
+                            onChange={(e) => setEditingLayerName(e.target.value)}
+                            onBlur={() => {
+                              boardRef.current?.renameLayer?.(layer.id, editingLayerName);
+                              setEditingLayerId(null);
+                              setEditingLayerName('');
+                              refreshLayers();
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                boardRef.current?.renameLayer?.(layer.id, editingLayerName);
+                                setEditingLayerId(null);
+                                setEditingLayerName('');
+                                refreshLayers();
+                              }
+                              if (e.key === 'Escape') {
+                                setEditingLayerId(null);
+                                setEditingLayerName('');
+                              }
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      {selectedTextField && (
+                        <button
+                          className="icon-btn small"
+                          title="Move selected text box to this layer"
+                          aria-label="Move selected text box to this layer"
+                          onClick={() => {
+                            boardRef.current?.moveSelectedTextFieldToLayer?.(layer.id);
+                            refreshLayers();
+                          }}
+                        >
+                          <ArrowLeftRight size={16} />
+                        </button>
+                      )}
+
+                      <button
+                        className="icon-btn small"
+                        disabled={!canMoveUp}
+                        title="Move layer up"
+                        aria-label="Move layer up"
+                        onClick={() => {
+                          boardRef.current?.moveLayer?.(layer.id, 'up');
+                          refreshLayers();
+                        }}
+                      >
+                        <ChevronUp size={16} />
+                      </button>
+                      <button
+                        className="icon-btn small"
+                        disabled={!canMoveDown}
+                        title="Move layer down"
+                        aria-label="Move layer down"
+                        onClick={() => {
+                          boardRef.current?.moveLayer?.(layer.id, 'down');
+                          refreshLayers();
+                        }}
+                      >
+                        <ChevronDown size={16} />
+                      </button>
+
+                      <button
+                        className="icon-btn small danger"
+                        disabled={!canDelete}
+                        title="Delete layer"
+                        aria-label="Delete layer"
+                        onClick={() => {
+                          boardRef.current?.deleteLayer?.(layer.id);
+                          refreshLayers();
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  );
+                  });
+                })()}
+              </div>
             </div>
           )}
         </section>
@@ -1343,6 +1727,24 @@ export default function App() {
               <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
                 <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
               </div>
+              <div className="ai-ask">
+                <input
+                  className="ask-input"
+                  placeholder="Ask AI (optional prompt)"
+                  value={promptText}
+                  onChange={(e) => setPromptText(e.target.value)}
+                />
+                <button
+                  className={`btn accent ask-btn ${isAnalyzing ? 'beam' : ''} ${askClicked ? 'clicked' : ''}`}
+                  title="Ask AI"
+                  data-tooltip="Ask AI"
+                  onClick={onAnalyze}
+                  aria-label="Ask AI"
+                >
+                  <Send size={16} />
+                  <span>Ask AI</span>
+                </button>
+              </div>
             </div>
           </aside>
         )}
@@ -1356,30 +1758,30 @@ export default function App() {
               <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
                 <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
               </div>
+              <div className="ai-ask">
+                <input
+                  className="ask-input"
+                  placeholder="Ask AI (optional prompt)"
+                  value={promptText}
+                  onChange={(e) => setPromptText(e.target.value)}
+                />
+                <button
+                  className={`btn accent ask-btn ${isAnalyzing ? 'beam' : ''} ${askClicked ? 'clicked' : ''}`}
+                  onClick={onAnalyze}
+                  aria-label="Ask AI"
+                >
+                  <Send size={16} />
+                  <span>Ask AI</span>
+                </button>
+              </div>
             </div>
           </aside>
         )}
       </main>
 
-      {shouldLoadMarketing && (
-        <Suspense fallback={null}>
-          <IntegrationSection techStack={techStack} useCases={integrationUseCases} />
-        </Suspense>
-      )}
+      {/* IntegrationSection removed per request */}
 
-      {shouldLoadMarketing && (
-        <Suspense fallback={null}>
-          <SiteFooter
-            logoImage={logoImage}
-            currentYear={currentYear}
-            onShowAbout={() => setShowAbout(true)}
-            onShowHow={() => {
-              setShowHow(true);
-              setActiveHowCard('quick');
-            }}
-          />
-        </Suspense>
-      )}
+      {/* Footer removed per request */}
 
       {showAbout && (
         <div className="about-modal" role="dialog" aria-modal="true" aria-label="About Cognito">

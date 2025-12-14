@@ -32,6 +32,16 @@ export type CanvasBoardRef = {
   deleteHistorySnapshot?: (entryId: string) => void;
   getSelectedTextField?: () => CanvasTextField | null;
   resizeSelectedTextField?: (size: { width?: number; height?: number }, options?: { commit?: boolean }) => void;
+  // Layers
+  getLayers?: () => CanvasLayer[];
+  getActiveLayerId?: () => string;
+  setActiveLayerId?: (layerId: string) => void;
+  createLayer?: (name?: string) => string;
+  renameLayer?: (layerId: string, name: string) => void;
+  deleteLayer?: (layerId: string) => void;
+  moveLayer?: (layerId: string, direction: 'up' | 'down') => void;
+  toggleLayerVisibility?: (layerId: string) => void;
+  moveSelectedTextFieldToLayer?: (layerId: string) => void;
 };
 
 export type ShapeKind = 'line' | 'rect' | 'ellipse' | 'arrow' | 'double-arrow' | 'triangle' | 'diamond' | 'hexagon';
@@ -61,6 +71,7 @@ type Stroke = {
   size: number;
   points: Point[];
   closed?: boolean;
+  layerId?: string;
 };
 type TextField = {
   id: string;
@@ -71,6 +82,7 @@ type TextField = {
   text: string;
   color: string;
   fontSize: number;
+  layerId?: string;
 };
 
 export type CanvasTextField = {
@@ -82,6 +94,13 @@ export type CanvasTextField = {
   text: string;
   color: string;
   fontSize: number;
+  layerId?: string;
+};
+
+export type CanvasLayer = {
+  id: string;
+  name: string;
+  visible: boolean;
 };
 
 const SHAPE_KINDS: ShapeKind[] = ['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon'];
@@ -91,7 +110,7 @@ const isShapeBrush = (mode: BrushKind): mode is ShapeKind => SHAPE_SET.has(mode 
 const HOLD_TO_DRAW_MS = 220;
 const HOLD_MOVE_THRESHOLD_PX = 4;
 
-export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, size, onHistoryUpdate, showGrid = false, gridSize = 24, onTextFieldChange, panMode = false }, ref) => {
+export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, size, onHistoryUpdate, showGrid = false, gridSize = 18, onTextFieldChange, panMode = false }, ref) => {
   const bgRef = useRef<HTMLCanvasElement | null>(null);
   const gridRef = useRef<HTMLCanvasElement | null>(null);
   const drawRef = useRef<HTMLCanvasElement | null>(null);
@@ -119,6 +138,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const bgPlacementRef = useRef<{dx:number;dy:number;dw:number;dh:number} | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
   const textFieldsRef = useRef<TextField[]>([]);
+  const layersRef = useRef<CanvasLayer[]>([{ id: 'layer-1', name: 'Layer 1', visible: true }]);
+  const activeLayerIdRef = useRef<string>('layer-1');
   const editingTextFieldRef = useRef<string | null>(null);
   const selectedTextFieldRef = useRef<string | null>(null);
   const resizingTextFieldRef = useRef<{id: string; handle: 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's'} | null>(null);
@@ -145,6 +166,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const previewRafRef = useRef<number | null>(null);
   // UX: hide the custom brush cursor ring (blue dashed circle) entirely.
   const SHOW_BRUSH_CURSOR = false;
+  const lastHostSizeRef = useRef<{ w: number; h: number } | null>(null);
 
   function updatePointerRefs(clientX: number, clientY: number) {
     const hit = hitRef.current as HTMLDivElement | null;
@@ -249,6 +271,28 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     };
   }, []);
 
+  // Keep the canvas bitmap sizes in sync with the CSS size of the host element.
+  // This prevents pointer drift when layout changes without a window resize (e.g. fullscreen CSS changes, panels toggling).
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      const cr = entry?.contentRect;
+      const w = Math.round(cr?.width ?? host.clientWidth ?? 0);
+      const h = Math.round(cr?.height ?? host.clientHeight ?? 0);
+      if (!w || !h) return;
+      const last = lastHostSizeRef.current;
+      if (last && Math.abs(last.w - w) <= 1 && Math.abs(last.h - h) <= 1) return;
+      lastHostSizeRef.current = { w, h };
+      resize();
+      renderAll();
+      drawBrushCursorOnly();
+    });
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, []);
+
   const cloneTextField = (field: TextField): CanvasTextField => ({
     id: field.id,
     x: field.x,
@@ -258,7 +302,24 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     text: field.text,
     color: field.color,
     fontSize: field.fontSize,
+    layerId: field.layerId,
   });
+
+  const ensureLayerIntegrity = () => {
+    if (!layersRef.current.length) {
+      layersRef.current = [{ id: 'layer-1', name: 'Layer 1', visible: true }];
+    }
+    if (!layersRef.current.some((l) => l.id === activeLayerIdRef.current)) {
+      activeLayerIdRef.current = layersRef.current[0].id;
+    }
+    const fallbackId = layersRef.current[0].id;
+    for (const s of strokesRef.current) {
+      if (!s.layerId) s.layerId = fallbackId;
+    }
+    for (const t of textFieldsRef.current) {
+      if (!t.layerId) t.layerId = fallbackId;
+    }
+  };
 
   const findSelectedTextField = (): TextField | null => {
     const id = selectedTextFieldRef.current;
@@ -587,14 +648,21 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         // Legacy format (just strokes)
         strokesRef.current = parsed;
         textFieldsRef.current = [];
+        layersRef.current = [{ id: 'layer-1', name: 'Layer 1', visible: true }];
+        activeLayerIdRef.current = 'layer-1';
       } else {
         strokesRef.current = parsed.strokes || [];
         textFieldsRef.current = parsed.textFields || [];
+        layersRef.current = Array.isArray(parsed.layers) && parsed.layers.length ? parsed.layers : [{ id: 'layer-1', name: 'Layer 1', visible: true }];
+        activeLayerIdRef.current = typeof parsed.activeLayerId === 'string' ? parsed.activeLayerId : (layersRef.current[0]?.id || 'layer-1');
       }
     } catch {
       strokesRef.current = [];
       textFieldsRef.current = [];
+      layersRef.current = [{ id: 'layer-1', name: 'Layer 1', visible: true }];
+      activeLayerIdRef.current = 'layer-1';
     }
+    ensureLayerIntegrity();
     editingTextFieldRef.current = null;
     renderAll();
     updateTextInputPosition();
@@ -610,6 +678,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const data = JSON.stringify({
         strokes: strokesRef.current,
         textFields: textFieldsRef.current,
+        layers: layersRef.current,
+        activeLayerId: activeLayerIdRef.current,
       });
       if (!data) return;
       const history = historyRef.current;
@@ -688,6 +758,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         return JSON.stringify({
           strokes: strokesRef.current,
           textFields: textFieldsRef.current,
+          layers: layersRef.current,
+          activeLayerId: activeLayerIdRef.current,
         }); 
       } catch { 
         return '{"strokes":[],"textFields":[]}'; 
@@ -700,14 +772,21 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
           // Legacy format
           strokesRef.current = parsed;
           textFieldsRef.current = [];
+          layersRef.current = [{ id: 'layer-1', name: 'Layer 1', visible: true }];
+          activeLayerIdRef.current = 'layer-1';
         } else {
           strokesRef.current = parsed.strokes || [];
           textFieldsRef.current = parsed.textFields || [];
+          layersRef.current = Array.isArray(parsed.layers) && parsed.layers.length ? parsed.layers : [{ id: 'layer-1', name: 'Layer 1', visible: true }];
+          activeLayerIdRef.current = typeof parsed.activeLayerId === 'string' ? parsed.activeLayerId : (layersRef.current[0]?.id || 'layer-1');
         }
       } catch {
         strokesRef.current = [];
         textFieldsRef.current = [];
+        layersRef.current = [{ id: 'layer-1', name: 'Layer 1', visible: true }];
+        activeLayerIdRef.current = 'layer-1';
       }
+      ensureLayerIntegrity();
       editingTextFieldRef.current = null;
       selectedTextFieldRef.current = null;
       notifySelectedTextField();
@@ -723,6 +802,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         data: JSON.stringify({
           strokes: strokesRef.current,
           textFields: textFieldsRef.current,
+          layers: layersRef.current,
+          activeLayerId: activeLayerIdRef.current,
         }), 
         ts: Date.now(), 
         label: 'Loaded' 
@@ -742,6 +823,75 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       return field ? cloneTextField(field) : null;
     },
     resizeSelectedTextField: (size, options) => resizeSelectedField(size, options),
+    getLayers: () => {
+      ensureLayerIntegrity();
+      return [...layersRef.current];
+    },
+    getActiveLayerId: () => {
+      ensureLayerIntegrity();
+      return activeLayerIdRef.current;
+    },
+    setActiveLayerId: (layerId: string) => {
+      ensureLayerIntegrity();
+      if (!layersRef.current.some((l) => l.id === layerId)) return;
+      activeLayerIdRef.current = layerId;
+    },
+    createLayer: (name?: string) => {
+      ensureLayerIntegrity();
+      const id = createHistoryId();
+      const label = (name || '').trim() || `Layer ${layersRef.current.length + 1}`;
+      layersRef.current = [...layersRef.current, { id, name: label, visible: true }];
+      activeLayerIdRef.current = id;
+      pushHistory(`Layer: ${label}`, true);
+      renderAll();
+      return id;
+    },
+    renameLayer: (layerId: string, name: string) => {
+      const nextName = (name || '').trim();
+      if (!nextName) return;
+      layersRef.current = layersRef.current.map((l) => (l.id === layerId ? { ...l, name: nextName } : l));
+      pushHistory('Rename layer', true);
+    },
+    deleteLayer: (layerId: string) => {
+      ensureLayerIntegrity();
+      if (layersRef.current.length <= 1) return;
+      layersRef.current = layersRef.current.filter((l) => l.id !== layerId);
+      strokesRef.current = strokesRef.current.filter((s) => (s.layerId || layersRef.current[0].id) !== layerId);
+      textFieldsRef.current = textFieldsRef.current.filter((t) => (t.layerId || layersRef.current[0].id) !== layerId);
+      if (activeLayerIdRef.current === layerId) activeLayerIdRef.current = layersRef.current[0].id;
+      pushHistory('Delete layer', true);
+      renderAll();
+      notifySelectedTextField();
+    },
+    moveLayer: (layerId: string, direction: 'up' | 'down') => {
+      ensureLayerIntegrity();
+      const idx = layersRef.current.findIndex((l) => l.id === layerId);
+      if (idx === -1) return;
+      const nextIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (nextIdx < 0 || nextIdx >= layersRef.current.length) return;
+      const next = [...layersRef.current];
+      const [item] = next.splice(idx, 1);
+      next.splice(nextIdx, 0, item);
+      layersRef.current = next;
+      pushHistory('Reorder layers', true);
+      renderAll();
+    },
+    toggleLayerVisibility: (layerId: string) => {
+      layersRef.current = layersRef.current.map((l) => (l.id === layerId ? { ...l, visible: !l.visible } : l));
+      renderAll();
+    },
+    moveSelectedTextFieldToLayer: (layerId: string) => {
+      ensureLayerIntegrity();
+      if (!layersRef.current.some((l) => l.id === layerId)) return;
+      const id = selectedTextFieldRef.current;
+      if (!id) return;
+      const f = textFieldsRef.current.find((t) => t.id === id);
+      if (!f) return;
+      f.layerId = layerId;
+      pushHistory('Move text layer', true);
+      renderAll();
+      notifySelectedTextField();
+    },
   }));
 
   useEffect(() => {
@@ -812,6 +962,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       text: '',
       color: colorRef.current,
       fontSize: fontSize,
+      layerId: activeLayerIdRef.current,
     };
     
     textFieldsRef.current.push(newField);
@@ -1768,11 +1919,12 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
           size: sizeRef.current,
           points: sample.points,
           closed: sample.closed,
+          layerId: activeLayerIdRef.current,
         });
       }
     } else {
       if (pts.length < 2) return;
-      strokesRef.current.push({ mode: mode as FreeMode, color: colorRef.current, size: sizeRef.current, points: [...pts] });
+      strokesRef.current.push({ mode: mode as FreeMode, color: colorRef.current, size: sizeRef.current, points: [...pts], layerId: activeLayerIdRef.current });
     }
 
     const ctxO = ctxOverlayRef.current!;
@@ -1784,11 +1936,14 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   function resize() {
     const dpr = dprRef.current;
     const host = hostRef.current as HTMLElement;
+    // Prefer clientWidth/clientHeight (CSS pixels) so bitmap sizing matches layout exactly.
     const rect = host.getBoundingClientRect();
+    const cssW = Math.max(1, Math.round((host as HTMLElement).clientWidth || rect.width));
+    const cssH = Math.max(1, Math.round((host as HTMLElement).clientHeight || rect.height));
     const canvases = [bgRef.current!, gridRef.current!, drawRef.current!, overlayRef.current!];
     canvases.forEach(c => {
-      c.width = Math.floor(rect.width * dpr);
-      c.height = Math.floor(rect.height * dpr);
+      c.width = Math.floor(cssW * dpr);
+      c.height = Math.floor(cssH * dpr);
       const ctx = c.getContext('2d')!;
       ctx.setTransform(1,0,0,1,0,0);
       ctx.scale(dpr, dpr);
@@ -1881,8 +2036,12 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       // re-render strokes and text fields into tmp so export always matches current zoom
       const z = zoomRef.current || 1; const pan = panRef.current;
       ctx.setTransform(z,0,0,z,pan.x,pan.y);
-      drawStrokes(ctx, z);
-      drawTextFields(ctx, z);
+      ensureLayerIntegrity();
+      for (const layer of layersRef.current) {
+        if (!layer.visible) continue;
+        drawStrokes(ctx, z, layer.id);
+        drawTextFields(ctx, z, layer.id);
+      }
       return tmp.toDataURL('image/png');
     } catch {
       return null;
@@ -1929,8 +2088,9 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     drawBrushCursorOnly();
   }
 
-  function drawStrokes(ctx: CanvasRenderingContext2D, z: number) {
+  function drawStrokes(ctx: CanvasRenderingContext2D, z: number, layerId: string) {
     for (const s of strokesRef.current) {
+      if ((s.layerId || layersRef.current[0]?.id || 'layer-1') !== layerId) continue;
       if (s.mode === 'shape' && s.shape) {
         drawShapeStroke(ctx, s, z);
         continue;
@@ -1987,19 +2147,24 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
     ctx.setTransform(z*dpr,0,0,z*dpr,pan.x*dpr,pan.y*dpr);
-    drawStrokes(ctx, z);
-    drawTextFields(ctx, z);
+    ensureLayerIntegrity();
+    for (const layer of layersRef.current) {
+      if (!layer.visible) continue;
+      drawStrokes(ctx, z, layer.id);
+      drawTextFields(ctx, z, layer.id);
+    }
     ctx.setTransform(dpr,0,0,dpr,0,0);
     renderGrid();
     renderBrushCursor();
   }
 
-  function drawTextFields(ctx: CanvasRenderingContext2D, z: number) {
+  function drawTextFields(ctx: CanvasRenderingContext2D, z: number, layerId: string) {
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     
     for (const field of textFieldsRef.current) {
+      if ((field.layerId || layersRef.current[0]?.id || 'layer-1') !== layerId) continue;
       const isEditing = editingTextFieldRef.current === field.id;
       const isSelected = selectedTextFieldRef.current === field.id;
       const showControls = isEditing || isSelected || brushRef.current === 'text';
@@ -2088,40 +2253,67 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const panWorldX = -pan.x / z;
     const panWorldY = -pan.y / z;
 
-    const size = Math.max(4, Math.min(256, gridSizeRef.current || 24));
-    const majorEvery = Math.max(2, Math.round(80 / size));
+    // Adaptive dotted grid:
+    // Keep dot spacing visually comfortable as user zooms (common in canvas apps),
+    // instead of making the grid feel "more zoomed" when zooming in.
+    const baseSize = Math.max(4, Math.min(256, gridSizeRef.current || 18)); // world units at ~1x
+    // Slightly denser than before (more like canvas/design tools), still adaptive with zoom.
+    const MIN_SPACING_PX = 12;
+    const MAX_SPACING_PX = 26;
+    let step = baseSize;
+    while (step * z < MIN_SPACING_PX) step *= 2;
+    while (step * z > MAX_SPACING_PX && step > 2) step /= 2;
+    step = Math.max(2, step);
+    const majorStep = step * 4;
     const rootStyle = typeof window !== 'undefined' ? getComputedStyle(document.documentElement) : null;
     const minorColor = rootStyle?.getPropertyValue('--grid-minor')?.trim() || (document.documentElement.classList.contains('dark') ? 'rgba(148,163,184,0.2)' : 'rgba(71,85,105,0.14)');
     const majorColor = rootStyle?.getPropertyValue('--grid-major')?.trim() || (document.documentElement.classList.contains('dark') ? 'rgba(148,163,184,0.45)' : 'rgba(30,41,59,0.32)');
-    const axisColor = rootStyle?.getPropertyValue('--grid-axis')?.trim() || 'rgba(14,165,233,0.55)';
+    // Note: we intentionally do NOT draw x/y axis lines. Those show up as strong blue crosshairs
+    // and users perceive them as "bugs" rather than helpful guides.
 
     ctx.setTransform(z * dpr, 0, 0, z * dpr, pan.x * dpr, pan.y * dpr);
-    const baseWidth = Math.max(1 / (dpr * z), 0.55 / dpr);
+    const baseWidth = Math.max(1 / (dpr * z), 0.55 / dpr); // world units
 
-    const startX = Math.floor(panWorldX / size) * size;
-    const endX = panWorldX + worldWidth + size;
-    const startY = Math.floor(panWorldY / size) * size;
-    const endY = panWorldY + worldHeight + size;
+    const startX = Math.floor(panWorldX / step) * step;
+    const endX = panWorldX + worldWidth + step;
+    const startY = Math.floor(panWorldY / step) * step;
+    const endY = panWorldY + worldHeight + step;
 
-    for (let x = startX, idx = 0; x <= endX; x += size, idx++) {
-      ctx.beginPath();
-      const isMajor = idx % majorEvery === 0;
-      ctx.strokeStyle = isMajor ? majorColor : minorColor;
-      ctx.lineWidth = baseWidth;
-      ctx.moveTo(x, startY);
-      ctx.lineTo(x, endY);
-      ctx.stroke();
+    // Dotted grid (looks cleaner than lines) with a density cap for performance when zoomed far out.
+    const approxCountX = Math.max(1, Math.floor((endX - startX) / step));
+    const approxCountY = Math.max(1, Math.floor((endY - startY) / step));
+    const approxPoints = approxCountX * approxCountY;
+    const MAX_POINTS = 20000;
+    const skip = approxPoints > MAX_POINTS ? Math.ceil(Math.sqrt(approxPoints / MAX_POINTS)) : 1;
+    const drawStep = step * skip;
+
+    // Dot radius in world units -> stays ~constant in screen pixels.
+    const rMinor = Math.max(baseWidth * 0.9, 0.85 / (dpr * z));
+    const rMajor = Math.max(rMinor * 1.9, 1.6 / (dpr * z));
+
+    // Draw minor dots
+    ctx.fillStyle = minorColor;
+    ctx.beginPath();
+    for (let x = Math.floor(panWorldX / drawStep) * drawStep; x <= endX; x += drawStep) {
+      for (let y = Math.floor(panWorldY / drawStep) * drawStep; y <= endY; y += drawStep) {
+        const isMajor = (Math.round(x / majorStep) * majorStep === x) || (Math.round(y / majorStep) * majorStep === y);
+        if (isMajor) continue; // majors drawn separately
+        ctx.moveTo(x + rMinor, y);
+        ctx.arc(x, y, rMinor, 0, Math.PI * 2);
+      }
     }
+    ctx.fill();
 
-    for (let y = startY, idy = 0; y <= endY; y += size, idy++) {
-      ctx.beginPath();
-      const isMajor = idy % majorEvery === 0;
-      ctx.strokeStyle = isMajor ? majorColor : minorColor;
-      ctx.lineWidth = baseWidth;
-      ctx.moveTo(startX, y);
-      ctx.lineTo(endX, y);
-      ctx.stroke();
+    // Draw major dots (slightly bigger)
+    ctx.fillStyle = majorColor;
+    ctx.beginPath();
+    for (let x = Math.floor(panWorldX / majorStep) * majorStep; x <= endX; x += majorStep) {
+      for (let y = Math.floor(panWorldY / majorStep) * majorStep; y <= endY; y += majorStep) {
+        ctx.moveTo(x + rMajor, y);
+        ctx.arc(x, y, rMajor, 0, Math.PI * 2);
+      }
     }
+    ctx.fill();
 
     ctx.setTransform(1,0,0,1,0,0);
   }
