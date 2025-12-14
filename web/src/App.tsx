@@ -144,7 +144,7 @@ function normalizeAiTextForSections(input: string): string {
 
   return t.trim();
 }
-const ASK_LIMIT = 30;
+const ASK_LIMIT = 10;
 const ASK_WINDOW_MS = 24 * 60 * 60 * 1000;
 const ASK_META_KEY = 'ASK_META';
 
@@ -1405,7 +1405,7 @@ export default function App() {
             <button className="icon-btn" onClick={() => setShowLimit(false)} aria-label="Close">✕</button>
           </div>
           <div className="about-body">
-            <p>You've used your 30 AI requests for the day. Please try again later.</p>
+            <p>You've used your 10 AI requests for the day. Please try again later.</p>
             <p>Want higher limits? Share feedback to help us plan upgrades.</p>
             <div style={{ display:'flex', gap:8, marginTop:12 }}>
               <a className="btn accent" href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer">Give feedback</a>
