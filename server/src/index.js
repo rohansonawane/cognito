@@ -11,8 +11,16 @@ const app = express();
 app.disable('x-powered-by');
 
 const IS_DEV = process.env.NODE_ENV === 'development';
-// Only trust proxy when explicitly configured (important for correct IP/rate-limit behind proxies)
-if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
+// Trust proxy in production so rate limiting + req.ip work correctly behind Nginx/ALB.
+// Security: default to trusting only loopback proxies (Nginx on same host).
+// Override with TRUST_PROXY (examples: "1", "loopback", "0").
+if (process.env.TRUST_PROXY) {
+  if (process.env.TRUST_PROXY === '0') app.set('trust proxy', false);
+  else if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
+  else app.set('trust proxy', process.env.TRUST_PROXY);
+} else if (!IS_DEV) {
+  app.set('trust proxy', 'loopback');
+}
 
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
