@@ -13,6 +13,7 @@ import {
   Palette,
   SlidersHorizontal,
   Download as DownloadIcon,
+  Crop,
   Save,
   Image as ImageIcon,
   Trash2,
@@ -571,7 +572,7 @@ export default function App() {
         (
           <>
             <span className="how-inline-icon"><MousePointer2 size={14} /></span>
-            <span className="how-text">Shortcuts – V(select), B(brush), E(eraser), T(text), H(hand/pan).</span>
+            <span className="how-text">Shortcuts – V(select), B(brush), E(eraser), T(text), H(hand/pan), ⌘/Ctrl+C/V (copy/paste), ⌘/Ctrl+D (duplicate). In Select: drag corners to resize; drag the top handle to rotate (Shift snaps).</span>
           </>
         ),
         (
@@ -1207,6 +1208,15 @@ export default function App() {
     a.click();
   }
 
+  function onDownloadSelection() {
+    const dataUrl = boardRef.current?.exportPngSelection?.();
+    if (!dataUrl) return;
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `canvas-selection-${Date.now()}.png`;
+    a.click();
+  }
+
   function onPickImage(files: FileList | null) {
     const file = files?.[0];
     if (!file) return;
@@ -1308,6 +1318,7 @@ export default function App() {
                     <GridIcon size={16} />
                   </button>
                   <button className="icon-btn" title="Save" onClick={() => boardRef.current?.saveBoard?.()}><Save size={16} /></button>
+                  <button className="icon-btn" title="Download selection" onClick={onDownloadSelection}><Crop size={16} /></button>
                   <button className="icon-btn" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
                   <label className="icon-btn" title="Add Image">
                     <ImageIcon size={16} />
@@ -1656,6 +1667,7 @@ export default function App() {
               >
                 <GridIcon size={16} />
               </button>
+              <button className="icon-btn" title="Download selection" onClick={onDownloadSelection}><Crop size={16} /></button>
               <button className="icon-btn" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
               <button className="icon-btn" title="Clear Canvas" onClick={() => boardRef.current?.clear()}><Trash2 size={16} /></button>
             </div>

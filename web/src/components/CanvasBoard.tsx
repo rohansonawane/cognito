@@ -20,6 +20,7 @@ export type CanvasBoardRef = {
   redo: () => void;
   clear: () => void;
   exportPng: () => string | null;
+  exportPngSelection?: () => string | null;
   saveBoard?: () => void;
   loadImage: (dataUrl: string) => void;
   setZoom: (delta: number) => void;
@@ -150,6 +151,22 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const shapeFillRef = useRef<boolean>(shapeFill);
   const selectedStrokeIdsRef = useRef<Set<string>>(new Set());
   const draggingStrokesRef = useRef<{ start: { x: number; y: number }; originals: Map<string, Point[]> } | null>(null);
+  const resizingStrokesRef = useRef<{
+    handle: 'nw' | 'ne' | 'sw' | 'se';
+    anchor: { x: number; y: number };
+    handleStart: { x: number; y: number };
+    originals: Map<string, Point[]>;
+  } | null>(null);
+  const rotatingStrokesRef = useRef<{
+    center: { x: number; y: number };
+    startAngle: number;
+    originals: Map<string, Point[]>;
+  } | null>(null);
+  const clipboardRef = useRef<{
+    strokes?: Stroke[];
+    textFields?: TextField[];
+    bounds?: { minX: number; minY: number; maxX: number; maxY: number };
+  } | null>(null);
   const marqueeRef = useRef<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
   const shiftPressedRef = useRef<boolean>(false);
   const editingTextFieldRef = useRef<string | null>(null);
@@ -369,6 +386,76 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     return { minX, minY, maxX, maxY };
   };
 
+  const getSelectionBounds = (ids: Set<string>) => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const id of ids) {
+      const s = strokesRef.current.find((st) => st.id === id);
+      if (!s) continue;
+      const b = getStrokeBounds(s);
+      if (b.minX < minX) minX = b.minX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.maxY > maxY) maxY = b.maxY;
+    }
+    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return null;
+    return { minX, minY, maxX, maxY };
+  };
+
+  const cloneStrokeWithOffset = (s: Stroke, dx: number, dy: number): Stroke => ({
+    ...s,
+    id: createHistoryId(),
+    points: s.points.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy })),
+  });
+
+  const cloneTextFieldWithOffset = (t: TextField, dx: number, dy: number): TextField => ({
+    ...t,
+    id: createHistoryId(),
+    x: t.x + dx,
+    y: t.y + dy,
+  });
+
+  const getSelectionHandles = (b: { minX: number; minY: number; maxX: number; maxY: number }) => {
+    return [
+      { key: 'nw' as const, x: b.minX, y: b.minY },
+      { key: 'ne' as const, x: b.maxX, y: b.minY },
+      { key: 'sw' as const, x: b.minX, y: b.maxY },
+      { key: 'se' as const, x: b.maxX, y: b.maxY },
+    ];
+  };
+
+  const findSelectionHandleAtWorldPoint = (wx: number, wy: number, bounds: { minX: number; minY: number; maxX: number; maxY: number }) => {
+    const z = zoomRef.current || 1;
+    const tol = 10 / z; // world units
+    const tolSq = tol * tol;
+    for (const h of getSelectionHandles(bounds)) {
+      const dx = wx - h.x;
+      const dy = wy - h.y;
+      if ((dx * dx + dy * dy) <= tolSq) return h.key;
+    }
+    return null;
+  };
+
+  const getSelectionCenter = (b: { minX: number; minY: number; maxX: number; maxY: number }) => ({
+    x: (b.minX + b.maxX) / 2,
+    y: (b.minY + b.maxY) / 2,
+  });
+
+  const getRotateHandle = (b: { minX: number; minY: number; maxX: number; maxY: number }) => {
+    const c = getSelectionCenter(b);
+    const r = Math.max(10, Math.hypot(b.maxX - b.minX, b.maxY - b.minY) * 0.02);
+    return { x: c.x, y: b.minY - r * 3.2 };
+  };
+
+  const findRotateHandleAtWorldPoint = (wx: number, wy: number, b: { minX: number; minY: number; maxX: number; maxY: number }) => {
+    const z = zoomRef.current || 1;
+    const tol = 12 / z;
+    const tolSq = tol * tol;
+    const h = getRotateHandle(b);
+    const dx = wx - h.x;
+    const dy = wy - h.y;
+    return (dx * dx + dy * dy) <= tolSq;
+  };
+
   const distToSegSq = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
     const abx = bx - ax;
     const aby = by - ay;
@@ -441,20 +528,45 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const dpr = dprRef.current;
     ctxO.setTransform(z * dpr, 0, 0, z * dpr, pan.x * dpr, pan.y * dpr);
 
-    // Selected strokes
+    // Selected strokes: single bounding box + resize handles
     if (selectedStrokeIdsRef.current.size) {
-      ctxO.save();
-      ctxO.strokeStyle = '#3b82f6';
-      ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
-      ctxO.setLineDash([4 / z, 3 / z]);
-      for (const id of selectedStrokeIdsRef.current) {
-        const s = strokesRef.current.find((st) => st.id === id);
-        if (!s) continue;
-        const b = getStrokeBounds(s);
+      const b = getSelectionBounds(selectedStrokeIdsRef.current);
+      if (b) {
         const pad = 6 / z;
-        ctxO.strokeRect(b.minX - pad, b.minY - pad, (b.maxX - b.minX) + pad * 2, (b.maxY - b.minY) + pad * 2);
+        const x = b.minX - pad;
+        const y = b.minY - pad;
+        const w = (b.maxX - b.minX) + pad * 2;
+        const h = (b.maxY - b.minY) + pad * 2;
+        ctxO.save();
+        ctxO.strokeStyle = '#3b82f6';
+        ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
+        ctxO.setLineDash([4 / z, 3 / z]);
+        ctxO.strokeRect(x, y, w, h);
+        ctxO.setLineDash([]);
+        // Handles
+        const handleSize = 8 / z;
+        ctxO.fillStyle = '#3b82f6';
+        ctxO.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
+        for (const hnd of getSelectionHandles(b)) {
+          ctxO.beginPath();
+          ctxO.rect(hnd.x - handleSize / 2, hnd.y - handleSize / 2, handleSize, handleSize);
+          ctxO.fill();
+          ctxO.stroke();
+        }
+        // Rotate handle (small circle above top edge)
+        const rot = getRotateHandle(b);
+        ctxO.beginPath();
+        ctxO.moveTo((b.minX + b.maxX) / 2, b.minY);
+        ctxO.lineTo(rot.x, rot.y);
+        ctxO.stroke();
+        const r = 5.5 / z;
+        ctxO.beginPath();
+        ctxO.arc(rot.x, rot.y, r, 0, Math.PI * 2);
+        ctxO.fill();
+        ctxO.stroke();
+        ctxO.restore();
       }
-      ctxO.restore();
     }
 
     // Marquee selection rect
@@ -899,6 +1011,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     redo: () => redo(),
     clear: () => clear(),
     exportPng: () => exportPng(),
+    exportPngSelection: () => exportPngSelection(),
     saveBoard: () => saveBoard(),
     loadImage: (d) => loadImage(d),
     setZoom: (delta) => {
@@ -1151,6 +1264,14 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const { localX: lx, localY: ly } = updated;
       pointersRef.current.set(e.pointerId, { x: lx, y: ly });
       cancelHold();
+
+      // If we switch into selection interactions, force-cancel any drawing state
+      // (prevents "stuck drawing" from blocking selection drags).
+      if (brushRef.current === 'select') {
+        isDrawingRef.current = false;
+        isActivelyDrawingRef.current = false;
+        pointsRef.current = [];
+      }
       
       const panModeActive = panModeRef.current;
       // For touch/mouse events, track the start position to detect if user is scrolling vs drawing
@@ -1211,6 +1332,21 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
 
       // Prefer text fields first (existing logic for drag handles etc).
       const hitText = getTextFieldAtPoint(lx, ly);
+      // If hovering a resize handle on a text field, allow resizing in Select mode too.
+      if (hitText && hitText.field && hitText.handle) {
+        if (isLayerLocked(hitText.field.layerId)) {
+          selectedTextFieldRef.current = hitText.field.id;
+          notifySelectedTextField();
+          renderAll();
+          renderSelectionOverlay();
+          return;
+        }
+        resizingTextFieldRef.current = { id: hitText.field.id, handle: hitText.handle };
+        selectedTextFieldRef.current = hitText.field.id;
+        notifySelectedTextField();
+        renderAll();
+        return;
+      }
       if (hitText && hitText.field && !hitText.handle) {
         // Locked layer: allow select but don't drag/edit.
         if (isLayerLocked(hitText.field.layerId)) {
@@ -1229,6 +1365,61 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         renderAll();
         renderSelectionOverlay();
         return;
+      }
+
+      // Resize handle on selected strokes?
+      if (selectedStrokeIdsRef.current.size) {
+        const b = getSelectionBounds(selectedStrokeIdsRef.current);
+        if (b) {
+          // Rotate handle?
+          if (findRotateHandleAtWorldPoint(wx, wy, b)) {
+            const originals = new Map<string, Point[]>();
+            for (const id of selectedStrokeIdsRef.current) {
+              const s = strokesRef.current.find((st) => st.id === id);
+              if (!s) continue;
+              originals.set(id, s.points.map((p) => ({ ...p })));
+            }
+            const c = getSelectionCenter(b);
+            rotatingStrokesRef.current = {
+              center: c,
+              startAngle: Math.atan2(wy - c.y, wx - c.x),
+              originals,
+            };
+            renderAll();
+            renderSelectionOverlay();
+            return;
+          }
+          const handle = findSelectionHandleAtWorldPoint(wx, wy, b);
+          if (handle) {
+            const originals = new Map<string, Point[]>();
+            for (const id of selectedStrokeIdsRef.current) {
+              const s = strokesRef.current.find((st) => st.id === id);
+              if (!s) continue;
+              originals.set(id, s.points.map((p) => ({ ...p })));
+            }
+            const handles = {
+              nw: { x: b.minX, y: b.minY },
+              ne: { x: b.maxX, y: b.minY },
+              sw: { x: b.minX, y: b.maxY },
+              se: { x: b.maxX, y: b.maxY },
+            } as const;
+            const opposite = {
+              nw: { x: b.maxX, y: b.maxY },
+              ne: { x: b.minX, y: b.maxY },
+              sw: { x: b.maxX, y: b.minY },
+              se: { x: b.minX, y: b.minY },
+            } as const;
+            resizingStrokesRef.current = {
+              handle,
+              anchor: opposite[handle],
+              handleStart: handles[handle],
+              originals,
+            };
+            renderAll();
+            renderSelectionOverlay();
+            return;
+          }
+        }
       }
 
       // Stroke hit test
@@ -1455,6 +1646,103 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       if (!updated) return;
       const { localX: lx, localY: ly } = updated;
       if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: lx, y: ly });
+
+      // Select interactions must take precedence over any drawing early-returns.
+      if (brushRef.current === 'select') {
+        // Handle rotating selected strokes
+        if (rotatingStrokesRef.current) {
+          const { x: wx, y: wy } = getWorldFromLocal(lx, ly);
+          const r = rotatingStrokesRef.current;
+          const cx = r.center.x;
+          const cy = r.center.y;
+          const ang = Math.atan2(wy - cy, wx - cx);
+          let delta = ang - r.startAngle;
+          if (shiftPressedRef.current) {
+            const snap = Math.PI / 12; // 15°
+            delta = Math.round(delta / snap) * snap;
+          }
+          const cos = Math.cos(delta);
+          const sin = Math.sin(delta);
+          for (const [id, pts] of r.originals.entries()) {
+            const s = strokesRef.current.find((st) => st.id === id);
+            if (!s) continue;
+            s.points = pts.map((p) => {
+              const dx = p.x - cx;
+              const dy = p.y - cy;
+              return { ...p, x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+            });
+          }
+          renderAll();
+          renderSelectionOverlay();
+          return;
+        }
+        // Handle resizing selected strokes
+        if (resizingStrokesRef.current) {
+          const { x: wx, y: wy } = getWorldFromLocal(lx, ly);
+          const r = resizingStrokesRef.current;
+          const ax = r.anchor.x;
+          const ay = r.anchor.y;
+          const denomX = (r.handleStart.x - ax) || 1e-6;
+          const denomY = (r.handleStart.y - ay) || 1e-6;
+          let sx = (wx - ax) / denomX;
+          let sy = (wy - ay) / denomY;
+          // Prevent flips; clamp to sane range
+          sx = Math.max(0.05, Math.min(50, sx));
+          sy = Math.max(0.05, Math.min(50, sy));
+          if (shiftPressedRef.current) {
+            const s = Math.max(sx, sy);
+            sx = s;
+            sy = s;
+          }
+          for (const [id, pts] of r.originals.entries()) {
+            const s = strokesRef.current.find((st) => st.id === id);
+            if (!s) continue;
+            s.points = pts.map((p) => ({ ...p, x: ax + (p.x - ax) * sx, y: ay + (p.y - ay) * sy }));
+          }
+          renderAll();
+          renderSelectionOverlay();
+          return;
+        }
+        // Handle stroke dragging
+        if (draggingStrokesRef.current) {
+          const { x: wx, y: wy } = getWorldFromLocal(lx, ly);
+          const drag = draggingStrokesRef.current;
+          const dx = wx - drag.start.x;
+          const dy = wy - drag.start.y;
+          for (const [id, pts] of drag.originals.entries()) {
+            const s = strokesRef.current.find((st) => st.id === id);
+            if (!s) continue;
+            s.points = pts.map((p) => ({ ...p, x: p.x + dx, y: p.y + dy }));
+          }
+          renderAll();
+          renderSelectionOverlay();
+          return;
+        }
+        // Handle marquee selection
+        if (marqueeRef.current) {
+          const { x: wx, y: wy } = getWorldFromLocal(lx, ly);
+          marqueeRef.current.current = { x: wx, y: wy };
+          renderSelectionOverlay();
+          return;
+        }
+        // Handle text dragging (when select grabbed a text field)
+        if (draggingTextFieldRef.current) {
+          const z = zoomRef.current || 1;
+          const pan = panRef.current;
+          const worldX = (lx - pan.x) / z;
+          const worldY = (ly - pan.y) / z;
+          const field = textFieldsRef.current.find(f => f.id === draggingTextFieldRef.current);
+          if (field) {
+            if (!textFieldDragOffsetRef.current) {
+              textFieldDragOffsetRef.current = { x: worldX - field.x, y: worldY - field.y };
+            }
+            field.x = worldX - textFieldDragOffsetRef.current.x;
+            field.y = worldY - textFieldDragOffsetRef.current.y;
+            renderAll();
+          }
+          return;
+        }
+      }
       
       // Hold-to-draw gating
       if (!panModeRef.current && !isDrawingRef.current && holdPointerIdRef.current === e.pointerId) {
@@ -1584,8 +1872,6 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         return;
       }
       
-      // Handle text field dragging
-      if (draggingTextFieldRef.current) {
       // Handle stroke dragging (select tool)
       if (draggingStrokesRef.current) {
         const { x: wx, y: wy } = getWorldFromLocal(lx, ly);
@@ -1609,6 +1895,9 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         renderSelectionOverlay();
         return;
       }
+
+      // Handle text field dragging
+      if (draggingTextFieldRef.current) {
         const z = zoomRef.current || 1;
         const pan = panRef.current;
         const worldX = (lx - pan.x) / z;
@@ -1700,6 +1989,22 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         const lx = e.clientX - rect.left;
         const ly = e.clientY - rect.top;
         updateCursor(lx, ly);
+        return;
+      }
+
+      if (rotatingStrokesRef.current) {
+        rotatingStrokesRef.current = null;
+        pushHistory();
+        renderAll();
+        renderSelectionOverlay();
+        return;
+      }
+
+      if (resizingStrokesRef.current) {
+        resizingStrokesRef.current = null;
+        pushHistory();
+        renderAll();
+        renderSelectionOverlay();
         return;
       }
       
@@ -1811,12 +2116,104 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
       }
+
+      const isMod = e.metaKey || e.ctrlKey;
+      const keyLower = (e.key || '').toLowerCase();
       
       if (e.code === 'Space') {
         e.preventDefault(); 
         spacePressedRef.current = true; 
       } else if (e.key === 'Shift') {
         shiftPressedRef.current = true;
+      } else if (isMod && keyLower === 'c') {
+        // Copy selected strokes or selected text field
+        e.preventDefault();
+        ensureLayerIntegrity();
+        const clip: { strokes?: Stroke[]; textFields?: TextField[]; bounds?: { minX: number; minY: number; maxX: number; maxY: number } } = {};
+        if (selectedStrokeIdsRef.current.size) {
+          const ids = Array.from(selectedStrokeIdsRef.current);
+          const strokes = ids.map((id) => strokesRef.current.find((s) => s.id === id)).filter(Boolean) as Stroke[];
+          clip.strokes = strokes.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p })) }));
+          clip.bounds = getSelectionBounds(selectedStrokeIdsRef.current) || undefined;
+        } else if (selectedTextFieldRef.current) {
+          const f = textFieldsRef.current.find((t) => t.id === selectedTextFieldRef.current);
+          if (f) {
+            clip.textFields = [{ ...f }];
+            clip.bounds = { minX: f.x, minY: f.y, maxX: f.x + f.width, maxY: f.y + f.height };
+          }
+        }
+        clipboardRef.current = (clip.strokes?.length || clip.textFields?.length) ? clip : null;
+      } else if (isMod && keyLower === 'v') {
+        // Paste
+        e.preventDefault();
+        ensureLayerIntegrity();
+        if (isLayerLocked(activeLayerIdRef.current)) return;
+        const clip = clipboardRef.current;
+        if (!clip) return;
+        const z = zoomRef.current || 1;
+        const dx = 18 / z;
+        const dy = 18 / z;
+        if (clip.strokes?.length) {
+          const newIds = new Set<string>();
+          for (const s of clip.strokes) {
+            const ns = cloneStrokeWithOffset({ ...s, layerId: activeLayerIdRef.current }, dx, dy);
+            strokesRef.current.push(ns);
+            newIds.add(ns.id);
+          }
+          selectedStrokeIdsRef.current = newIds;
+          selectedTextFieldRef.current = null;
+          notifySelectedTextField();
+          renderAll();
+          renderSelectionOverlay();
+          pushHistory('Paste', true);
+          return;
+        }
+        if (clip.textFields?.length) {
+          const base = clip.textFields[0];
+          const nf = cloneTextFieldWithOffset({ ...base, layerId: activeLayerIdRef.current }, dx, dy);
+          textFieldsRef.current.push(nf);
+          selectedTextFieldRef.current = nf.id;
+          notifySelectedTextField();
+          renderAll();
+          updateTextInputPosition();
+          pushHistory('Paste', true);
+        }
+      } else if (isMod && keyLower === 'd') {
+        // Duplicate (copy + paste)
+        e.preventDefault();
+        ensureLayerIntegrity();
+        if (isLayerLocked(activeLayerIdRef.current)) return;
+        const z = zoomRef.current || 1;
+        const dx = 18 / z;
+        const dy = 18 / z;
+        if (selectedStrokeIdsRef.current.size) {
+          const ids = Array.from(selectedStrokeIdsRef.current);
+          const strokes = ids.map((id) => strokesRef.current.find((s) => s.id === id)).filter(Boolean) as Stroke[];
+          const newIds = new Set<string>();
+          for (const s of strokes) {
+            const ns = cloneStrokeWithOffset({ ...s, layerId: activeLayerIdRef.current }, dx, dy);
+            strokesRef.current.push(ns);
+            newIds.add(ns.id);
+          }
+          selectedStrokeIdsRef.current = newIds;
+          selectedTextFieldRef.current = null;
+          notifySelectedTextField();
+          renderAll();
+          renderSelectionOverlay();
+          pushHistory('Duplicate', true);
+          return;
+        }
+        if (selectedTextFieldRef.current) {
+          const f = textFieldsRef.current.find((t) => t.id === selectedTextFieldRef.current);
+          if (!f) return;
+          const nf = cloneTextFieldWithOffset({ ...f, layerId: activeLayerIdRef.current }, dx, dy);
+          textFieldsRef.current.push(nf);
+          selectedTextFieldRef.current = nf.id;
+          notifySelectedTextField();
+          renderAll();
+          updateTextInputPosition();
+          pushHistory('Duplicate', true);
+        }
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTextFieldRef.current) {
         // Delete selected text field
         e.preventDefault();
@@ -2401,6 +2798,58 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const z = zoomRef.current || 1; const pan = panRef.current;
       ctx.setTransform(z,0,0,z,pan.x,pan.y);
       ensureLayerIntegrity();
+      for (const layer of layersRef.current) {
+        if (!layer.visible) continue;
+        drawStrokes(ctx, z, layer.id);
+        drawTextFields(ctx, z, layer.id);
+      }
+      return tmp.toDataURL('image/png');
+    } catch {
+      return null;
+    }
+  }
+
+  function exportPngSelection() {
+    try {
+      ensureLayerIntegrity();
+      const host = hostRef.current as HTMLElement;
+      const rect = host.getBoundingClientRect();
+      const z = zoomRef.current || 1;
+      const pan = panRef.current;
+
+      // Determine selection bounds in world coords
+      let worldBounds: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+      if (selectedStrokeIdsRef.current.size) {
+        worldBounds = getSelectionBounds(selectedStrokeIdsRef.current);
+      } else if (selectedTextFieldRef.current) {
+        const f = textFieldsRef.current.find((t) => t.id === selectedTextFieldRef.current);
+        if (f) {
+          worldBounds = { minX: f.x, minY: f.y, maxX: f.x + f.width, maxY: f.y + f.height };
+        }
+      }
+      if (!worldBounds) return null;
+
+      // Convert to screen coords for cropping bg
+      const padPx = 18;
+      const x0 = worldBounds.minX * z + pan.x - padPx;
+      const y0 = worldBounds.minY * z + pan.y - padPx;
+      const x1 = worldBounds.maxX * z + pan.x + padPx;
+      const y1 = worldBounds.maxY * z + pan.y + padPx;
+      const cropX = Math.max(0, Math.floor(Math.min(x0, x1)));
+      const cropY = Math.max(0, Math.floor(Math.min(y0, y1)));
+      const cropW = Math.max(1, Math.floor(Math.min(rect.width, Math.max(x0, x1)) - cropX));
+      const cropH = Math.max(1, Math.floor(Math.min(rect.height, Math.max(y0, y1)) - cropY));
+
+      const tmp = document.createElement('canvas');
+      tmp.width = cropW;
+      tmp.height = cropH;
+      const ctx = tmp.getContext('2d')!;
+
+      // Background crop
+      ctx.drawImage(bgRef.current!, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      // Render strokes/text with same world->screen mapping, offset by crop
+      ctx.setTransform(z, 0, 0, z, pan.x - cropX, pan.y - cropY);
       for (const layer of layersRef.current) {
         if (!layer.visible) continue;
         drawStrokes(ctx, z, layer.id);
