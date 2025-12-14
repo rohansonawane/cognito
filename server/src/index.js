@@ -138,9 +138,9 @@ WRONG formatting (DO NOT USE):
 - "$Sn = ...$" or "$$Sn = ...$$" (wrong delimiters)
 - "Sn = $\\sum{k=1}^{n}...$" (wrong delimiter and missing underscore)
 `.trim();
-// Rate limiting enabled with 30 requests per day
+// Rate limiting enabled with 10 requests per day
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 24 * 60 * 60 * 1000); // default 24h
-const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 30); // 30 requests per window per IP
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 10); // 10 requests per window per IP
 const limiter = rateLimit({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,

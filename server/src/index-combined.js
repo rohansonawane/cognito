@@ -74,9 +74,9 @@ const MAX_IMAGE_MB = Number(process.env.MAX_IMAGE_MB || 8);
 const BODY_LIMIT = `${Math.min(Math.max(MAX_IMAGE_MB + 1, 4), 20)}mb`;
 app.use(express.json({ limit: BODY_LIMIT }));
 
-// Rate limiting enabled with 30 requests per day
+// Rate limiting enabled with 10 requests per day
 const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 24 * 60 * 60 * 1000);
-const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 30); // 30 requests per window per IP
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 10); // 10 requests per window per IP
 const limiter = rateLimit({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
