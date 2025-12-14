@@ -87,6 +87,7 @@ export type CanvasTextField = {
 const SHAPE_KINDS: ShapeKind[] = ['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon'];
 const SHAPE_SET = new Set<ShapeKind>(SHAPE_KINDS);
 const isShapeBrush = (mode: BrushKind): mode is ShapeKind => SHAPE_SET.has(mode as ShapeKind);
+// Touch-only: small delay so users can scroll the page without accidentally drawing.
 const HOLD_TO_DRAW_MS = 220;
 const HOLD_MOVE_THRESHOLD_PX = 4;
 
@@ -132,12 +133,18 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const gridSizeRef = useRef<number>(gridSize);
   const pointerClientRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const pointerWorldRef = useRef<{ x: number; y: number } | null>(null);
+  // Local pointer position in hit-layer coordinates (CSS pixels). Keeps cursor perfectly aligned.
+  const pointerLocalRef = useRef<{ x: number; y: number } | null>(null);
   const isActivelyDrawingRef = useRef<boolean>(false);
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const holdTimerRef = useRef<number | null>(null);
   const holdPointerIdRef = useRef<number | null>(null);
   const holdReadyRef = useRef<boolean>(false);
   const panModeRef = useRef<boolean>(panMode);
+  // Performance: throttle preview drawing to animation frames, and avoid O(n^2) redraw during long strokes.
+  const previewRafRef = useRef<number | null>(null);
+  // UX: hide the custom brush cursor ring (blue dashed circle) entirely.
+  const SHOW_BRUSH_CURSOR = false;
 
   function updatePointerRefs(clientX: number, clientY: number) {
     const hit = hitRef.current as HTMLDivElement | null;
@@ -146,6 +153,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const localX = clientX - rect.left;
     const localY = clientY - rect.top;
     pointerClientRef.current = { clientX, clientY };
+    pointerLocalRef.current = { x: localX, y: localY };
     const z = zoomRef.current || 1;
     const pan = panRef.current;
     pointerWorldRef.current = { x: (localX - pan.x) / z, y: (localY - pan.y) / z };
@@ -187,7 +195,21 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     isDrawingRef.current = true;
     pointsRef.current = [];
     addPoint(e);
-    renderPreview();
+    // Clear overlay once at stroke start.
+    const ctxO = ctxOverlayRef.current;
+    if (ctxO) {
+      ctxO.setTransform(1, 0, 0, 1, 0, 0);
+      ctxO.clearRect(0, 0, ctxO.canvas.width, ctxO.canvas.height);
+    }
+    schedulePreview();
+  }
+
+  function schedulePreview() {
+    if (previewRafRef.current != null) return;
+    previewRafRef.current = window.requestAnimationFrame(() => {
+      previewRafRef.current = null;
+      renderPreview();
+    });
   }
 
   function syncPointerWorldFromClient() {
@@ -425,6 +447,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const clientX = rect.left + x;
       const clientY = rect.top + y;
       pointerClientRef.current = { clientX, clientY };
+      pointerLocalRef.current = { x, y };
       const z = zoomRef.current || 1;
       const pan = panRef.current;
       pointerWorldRef.current = { x: (x - pan.x) / z, y: (y - pan.y) / z };
@@ -1017,9 +1040,15 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         renderAll();
       }
       
-      // Begin drawing with single pointer after hold
-      if (e.button!==0 && e.pointerType === 'mouse') return;
-      armHold(e.pointerId);
+      // Begin drawing:
+      // - mouse/pen: start immediately (no perceived delay)
+      // - touch: use hold-to-draw gating to avoid interfering with page scrolling
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (e.pointerType === 'touch') {
+        armHold(e.pointerId);
+        return;
+      }
+      beginDrawingInteraction(e);
       return;
     };
     const onMove = (e: PointerEvent) => {
@@ -1058,7 +1087,18 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         }
       }
       
-      // Update cursor based on what we're hovering over
+      // If drawing, avoid expensive hover/cursor work on every move.
+      if (isDrawingRef.current) {
+        // If actively drawing, prevent page scroll
+        if (isActivelyDrawingRef.current && e.pointerType === 'touch') {
+          e.preventDefault();
+        }
+        addPoint(e);
+        schedulePreview();
+        return;
+      }
+
+      // Update cursor based on what we're hovering over (only when not drawing)
       updateCursor(lx, ly);
       
       // Handle text field resizing
@@ -1207,13 +1247,6 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         drawBrushCursorOnly(); 
         return; 
       }
-      
-      // If actively drawing, prevent page scroll
-      if (isActivelyDrawingRef.current && e.pointerType === 'touch') {
-        e.preventDefault();
-      }
-      
-      addPoint(e); renderPreview();
     };
     const onUp = (e: PointerEvent) => {
       pointersRef.current.delete(e.pointerId);
@@ -1281,6 +1314,12 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         return;
       }
       isDrawingRef.current = false;
+      // Finish any pending preview frame before committing.
+      if (previewRafRef.current != null) {
+        window.cancelAnimationFrame(previewRafRef.current);
+        previewRafRef.current = null;
+      }
+      renderPreview();
       commitStrokeOrShape();
       pushHistory();
       pointsRef.current = [];
@@ -1297,6 +1336,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       if (isDrawingRef.current) return;
       pointerClientRef.current = null;
       pointerWorldRef.current = null;
+      pointerLocalRef.current = null;
       const ctxO = ctxOverlayRef.current;
       if (ctxO) {
         ctxO.setTransform(1,0,0,1,0,0);
@@ -1394,6 +1434,10 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       hit.removeEventListener('wheel', onWheel);
+      if (previewRafRef.current != null) {
+        window.cancelAnimationFrame(previewRafRef.current);
+        previewRafRef.current = null;
+      }
     };
   }, []);
 
@@ -1580,7 +1624,9 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     const dpr = dprRef.current;
     ctxO.setTransform(1,0,0,1,0,0);
     ctxO.clearRect(0, 0, ctxO.canvas.width, ctxO.canvas.height);
-    renderBrushCursorCore(ctxO, dpr);
+    if (SHOW_BRUSH_CURSOR) {
+      renderBrushCursorCore(ctxO, dpr);
+    }
     if (pts.length < 2) return;
     ctxO.setTransform(z*dpr,0,0,z*dpr,pan.x*dpr,pan.y*dpr);
 
@@ -1613,6 +1659,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       return;
     }
 
+    // Freehand preview: full (smooth) redraw, but throttled via requestAnimationFrame in onMove.
     ctxO.lineJoin = 'round'; ctxO.lineCap = 'round';
     ctxO.globalCompositeOperation = mode==='eraser' ? 'destination-out':'source-over';
     ctxO.globalAlpha = mode==='highlighter'?0.35:mode==='marker'?0.85:0.95;
@@ -1638,6 +1685,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   }
 
   function drawBrushCursorOnly() {
+    if (!SHOW_BRUSH_CURSOR) return;
     const ctxO = ctxOverlayRef.current;
     if (!ctxO) return;
     ctxO.setTransform(1,0,0,1,0,0);
@@ -1646,6 +1694,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   }
 
   function renderBrushCursor() {
+    if (!SHOW_BRUSH_CURSOR) return;
     const ctxO = ctxOverlayRef.current;
     if (!ctxO) return;
     ctxO.save();
@@ -1655,14 +1704,23 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   }
 
   function renderBrushCursorCore(ctxO: CanvasRenderingContext2D, dpr: number) {
+    const pointerLocal = pointerLocalRef.current;
     const pointer = pointerClientRef.current;
     const mode = brushRef.current;
-    if (!pointer) return;
-    const host = hostRef.current;
-    if (!host) return;
-    const rect = host.getBoundingClientRect();
-    const localX = pointer.clientX - rect.left;
-    const localY = pointer.clientY - rect.top;
+    if (!pointerLocal && !pointer) return;
+    // Prefer local coords from hit-layer (same space used by drawing), fallback to client→local via hitRef.
+    let localX: number;
+    let localY: number;
+    if (pointerLocal) {
+      localX = pointerLocal.x;
+      localY = pointerLocal.y;
+    } else {
+      const hit = hitRef.current;
+      if (!hit || !pointer) return;
+      const rect = hit.getBoundingClientRect();
+      localX = pointer.clientX - rect.left;
+      localY = pointer.clientY - rect.top;
+    }
     if (isShapeBrush(mode)) return;
     const isFreehand = mode === 'brush' || mode === 'marker' || mode === 'highlighter' || mode === 'eraser';
     if (!isFreehand) return;

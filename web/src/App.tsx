@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect, Suspense } from 'react';
-import { markdownToHtml } from './utils/markdown';
+import { renderMathOnly } from './utils/markdown';
+import 'katex/dist/katex.min.css';
 import { CanvasBoard, CanvasBoardRef, HistorySnapshot, type BrushKind, type CanvasTextField } from './components/CanvasBoard';
 import { analyze } from './ai/api';
 import logoImage from './assets/Logo.png';
@@ -39,8 +40,111 @@ import { SizeControl } from './components/SizeControl';
 const IntegrationSection = React.lazy(() => import('./components/IntegrationSection'));
 const SiteFooter = React.lazy(() => import('./components/SiteFooter'));
 
-const KNOWN_AI_LABELS = new Set(['Title', 'What I see', 'Details', 'Steps', 'Answer', 'Tips/Next']);
-const ASK_LIMIT = 10;
+// Preferred/known labels (for ordering + styling). We still accept other labels too,
+// because the AI response depends on the image type.
+const KNOWN_AI_LABELS = new Set([
+  'Title',
+  'What I see',
+  'Details',
+  'Steps',
+  'Math Steps',
+  'Answer',
+  'Final Answer',
+  'Options',
+  'Solution',
+  'Given',
+  'Tips/Next',
+]);
+// Comprehensive HTML and wrapper stripping function
+const stripHtml = (s: string): string => {
+  if (typeof s !== 'string') return s;
+  let text = s;
+  
+  // Remove all HTML tags (including self-closing and malformed)
+  text = text.replace(/<\/?[^>]+(>|$)/g, '');
+  
+  // Remove common AI wrapper patterns
+  text = text.replace(/<App[^>]*>/gi, '');
+  text = text.replace(/<\/App>/gi, '');
+  text = text.replace(/<div[^>]*>/gi, '');
+  text = text.replace(/<\/div>/gi, '');
+  text = text.replace(/<span[^>]*>/gi, '');
+  text = text.replace(/<\/span>/gi, '');
+  text = text.replace(/<p[^>]*>/gi, '');
+  text = text.replace(/<\/p>/gi, '');
+  
+  // Remove HTML entities that might have been left behind
+  text = text.replace(/&nbsp;/g, ' ');
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&#039;/g, "'");
+  
+  return text;
+};
+
+function normalizeAiTextForSections(input: string): string {
+  if (!input || typeof input !== 'string') return '';
+  let t = input;
+
+  // FIRST: Strip all HTML tags and wrappers aggressively
+  t = stripHtml(t);
+
+  // Remove common AI wrappers/prefixes.
+  t = t.replace(/\bAI Response\b\s*⧉?\s*/gi, '');
+  t = t.replace(/^\s*⧉\s*/g, '');
+  
+  // Remove any remaining HTML-like patterns that might have slipped through
+  t = t.replace(/<[^>]*>/g, '');
+
+  // Remove markdown heading markers from AI (e.g. "#### What I see:")
+  // We render sections with our own UI, so these prefixes just add noise.
+  t = t.replace(/^\s{0,3}#{1,6}\s+/gm, '');
+  // Also drop lines that are ONLY hashes (e.g. "####")
+  t = t.replace(/^\s{0,3}#{2,}\s*$/gm, '');
+
+  // CRITICAL: Preserve math blocks before normalizing whitespace
+  // Extract all math blocks temporarily to protect them
+  const mathBlocks: string[] = [];
+  const mathPlaceholder = (idx: number) => `__MATH_BLOCK_${idx}__`;
+  
+  // Protect display math \[...\]
+  t = t.replace(/\\\[[\s\S]*?\\\]/g, (match) => {
+    const idx = mathBlocks.length;
+    mathBlocks.push(match);
+    return mathPlaceholder(idx);
+  });
+  
+  // Protect inline math \(...\)
+  t = t.replace(/\\\([\s\S]*?\\\)/g, (match) => {
+    const idx = mathBlocks.length;
+    mathBlocks.push(match);
+    return mathPlaceholder(idx);
+  });
+
+  // Normalize whitespace (now safe since math is protected).
+  t = t.replace(/\u00a0/g, ' '); // NBSP
+  t = t.replace(/[ \t]+\n/g, '\n');
+  t = t.replace(/\n{3,}/g, '\n\n');
+
+  // Insert newlines before known section labels even if AI put them on one line.
+  // Example: "Title: ... What I see: ..." -> "Title: ...\nWhat I see: ..."
+  t = t.replace(/\b(Title|What I see|Details|Steps|Math Steps|Answer|Final Answer|Options|Solution|Given|Tips\/Next)\s*:/g, (match, label, offset, full) => {
+    if (offset === 0) return `${label}:`;
+    const prev = (full as string)[offset - 1];
+    if (prev === '\n') return `${label}:`;
+    return `\n${label}:`;
+  });
+
+  // Restore math blocks
+  mathBlocks.forEach((block, idx) => {
+    t = t.replace(mathPlaceholder(idx), block);
+  });
+
+  return t.trim();
+}
+const ASK_LIMIT = 30;
 const ASK_WINDOW_MS = 24 * 60 * 60 * 1000;
 const ASK_META_KEY = 'ASK_META';
 
@@ -57,19 +161,84 @@ function normalizeSlug(label: string) {
 
 function parseAiResponse(text: string): ParsedAiSection[] {
   if (!text || typeof text !== 'string') return [];
-  const lines = text.split(/\r?\n/);
+  
+  // CRITICAL: Merge lines that are part of incomplete math blocks before parsing sections
+  // This prevents math blocks from being split across items
+  let mergedText = text;
+  
+  // Merge lines that start with \[ or end with \] with adjacent lines
+  // Pattern: If a line is just `\[` or `\]`, merge it with the next/previous line
+  const lines = mergedText.split(/\r?\n/);
+  const mergedLines: string[] = [];
+  let i = 0;
+  
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    
+    // If line is just `\[`, merge with next non-empty line
+    if (line === '\\[' || line === '\\ ]') {
+      let merged = line;
+      i++;
+      // Find next non-empty line and merge
+      while (i < lines.length && !lines[i].trim()) i++;
+      if (i < lines.length) {
+        merged += '\n' + lines[i];
+        i++;
+      }
+      mergedLines.push(merged);
+      continue;
+    }
+    
+    // If line ends with `\]`, check if previous line needs merging
+    if (line.endsWith('\\]') || line.endsWith('\\ ]')) {
+      // Check if previous merged line is incomplete (starts with \[ but doesn't end with \])
+      if (mergedLines.length > 0 && 
+          (mergedLines[mergedLines.length - 1].includes('\\[') || mergedLines[mergedLines.length - 1].includes('\\ [')) &&
+          !mergedLines[mergedLines.length - 1].includes('\\]') && 
+          !mergedLines[mergedLines.length - 1].includes('\\ ]')) {
+        mergedLines[mergedLines.length - 1] += '\n' + line;
+      } else {
+        mergedLines.push(line);
+      }
+      i++;
+      continue;
+    }
+    
+    // Regular line
+    mergedLines.push(line);
+    i++;
+  }
+  
+  mergedText = mergedLines.join('\n');
+  const finalLines = mergedText.split(/\r?\n/);
+  
   const sections: ParsedAiSection[] = [];
   let current: ParsedAiSection | null = null;
   let matchedAnySection = false;
 
-  for (const raw of lines) {
+  const looksLikeSectionLabel = (label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return false;
+    if (trimmed.length > 28) return false;
+    // Avoid common false positives like full sentences.
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    if (words.length > 5) return false;
+    // Must start with a letter, contain at least one letter.
+    if (!/^[A-Za-z]/.test(trimmed)) return false;
+    if (!/[A-Za-z]/.test(trimmed)) return false;
+    // Avoid URLs / code-ish labels.
+    if (trimmed.includes('http') || trimmed.includes('://')) return false;
+    return true;
+  };
+
+  for (const raw of finalLines) {
     const line = raw.trim();
     if (!line) continue;
     const match = line.match(/^([A-Za-z][A-Za-z\/ ]+):\s*(.*)$/);
     if (match) {
       const [ , labelRaw, rest ] = match;
       const label = labelRaw.trim();
-      if (KNOWN_AI_LABELS.has(label)) {
+      if (looksLikeSectionLabel(label)) {
         matchedAnySection = true;
         current = {
           label,
@@ -89,6 +258,72 @@ function parseAiResponse(text: string): ParsedAiSection[] {
   if (!matchedAnySection) return [];
 
   sections.forEach((section) => {
+    // CRITICAL: Merge items that are part of split math blocks
+    // If an item is just `\[` or `\]`, merge it with adjacent items
+    const mergedItems: string[] = [];
+    for (let i = 0; i < section.items.length; i++) {
+      const item = section.items[i].trim();
+      
+      // If item is just opening delimiter, merge with next item(s) until we find closing
+      if (item === '\\[' || item === '\\ [' || item === '\\]' || item === '\\ ]') {
+        let merged = item;
+        let j = i + 1;
+        
+        // If it's an opening delimiter, find the closing one
+        if (item === '\\[' || item === '\\ [') {
+          while (j < section.items.length) {
+            merged += '\n' + section.items[j];
+            if (section.items[j].includes('\\]') || section.items[j].includes('\\ ]')) {
+              j++;
+              break;
+            }
+            j++;
+          }
+        } else {
+          // It's a closing delimiter, merge with previous if it exists
+          if (mergedItems.length > 0) {
+            mergedItems[mergedItems.length - 1] += '\n' + item;
+            continue;
+          }
+        }
+        
+        mergedItems.push(merged);
+        i = j - 1; // Skip the merged items
+        continue;
+      }
+      
+      // Check if item ends with opening delimiter or starts with closing delimiter
+      // and merge accordingly
+      if (item.endsWith('\\[') || item.endsWith('\\ [')) {
+        // Merge with next items until closing delimiter
+        let merged = item;
+        let j = i + 1;
+        while (j < section.items.length) {
+          merged += '\n' + section.items[j];
+          if (section.items[j].includes('\\]') || section.items[j].includes('\\ ]')) {
+            j++;
+            break;
+          }
+          j++;
+        }
+        mergedItems.push(merged);
+        i = j - 1;
+        continue;
+      }
+      
+      if (item.startsWith('\\]') || item.startsWith('\\ ]')) {
+        // Merge with previous if it exists
+        if (mergedItems.length > 0) {
+          mergedItems[mergedItems.length - 1] += '\n' + item;
+          continue;
+        }
+      }
+      
+      mergedItems.push(item);
+    }
+    
+    section.items = mergedItems;
+    
     const listPattern = /^([-•]\s*|\d+[\.\)]\s*)/;
     const isList = section.items.length > 1 && section.items.every((item) => listPattern.test(item));
     section.isList = isList;
@@ -96,6 +331,23 @@ function parseAiResponse(text: string): ParsedAiSection[] {
       section.items = section.items.map((item) => item.replace(listPattern, '').trim());
     }
   });
+
+  // Order: known labels first (in a sensible order), then the rest.
+  const order = [
+    'Title',
+    'What I see',
+    'Given',
+    'Details',
+    'Options',
+    'Steps',
+    'Math Steps',
+    'Solution',
+    'Answer',
+    'Final Answer',
+    'Tips/Next',
+  ];
+  const rank = new Map(order.map((k, i) => [k, i]));
+  sections.sort((a, b) => (rank.get(a.label) ?? 999) - (rank.get(b.label) ?? 999));
 
   return sections;
 }
@@ -149,10 +401,19 @@ export default function App() {
       const raw = localStorage.getItem(ASK_META_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        meta = {
-          count: typeof parsed.count === 'number' ? parsed.count : 0,
-          resetAt: typeof parsed.resetAt === 'number' ? parsed.resetAt : now + ASK_WINDOW_MS,
-        };
+        const storedCount = typeof parsed.count === 'number' ? parsed.count : 0;
+        // If stored count is >= old limit (10), reset it since we increased limit to 30
+        // This clears the limit for users who hit the old limit
+        if (storedCount >= 10) {
+          // Reset if user was at or exceeded old limit
+          meta = { count: 0, resetAt: now + ASK_WINDOW_MS };
+          localStorage.removeItem(ASK_META_KEY); // Clear old data
+        } else {
+          meta = {
+            count: storedCount,
+            resetAt: typeof parsed.resetAt === 'number' ? parsed.resetAt : now + ASK_WINDOW_MS,
+          };
+        }
       }
     } catch {}
     if (now > (meta.resetAt || 0)) {
@@ -335,12 +596,40 @@ export default function App() {
 
   useEffect(() => {
   }, [showGrid]);
+  // Removed MathJax - we're using KaTeX which renders synchronously during markdownToHtml
+  // No need for typesetting effects
   useEffect(() => {
     if (showHow) {
       setActiveHowCard('quick');
     }
   }, [showHow]);
-  const parsedAiSections = useMemo(() => parseAiResponse(aiText), [aiText]);
+  // stripHtml is now called inside normalizeAiTextForSections, so we don't need to call it twice
+  const cleanAiText = useMemo(() => normalizeAiTextForSections(aiText), [aiText]);
+  const parsedAiSections = useMemo(() => parseAiResponse(cleanAiText), [cleanAiText]);
+
+  // Optional console debugging for formatting issues.
+  // Enable via DevTools:
+  //   localStorage.setItem('AI_DEBUG','1'); location.reload()
+  // Or:
+  //   window.__AI_DEBUG = true
+  useEffect(() => {
+    try {
+      const enabled = localStorage.getItem('AI_DEBUG') === '1' || (window as any).__AI_DEBUG === true;
+      if (!enabled) return;
+      // eslint-disable-next-line no-console
+      console.log('[AI_FORMAT_DEBUG] App aiText (raw)', { preview: (aiText || '').slice(0, 800) });
+      // eslint-disable-next-line no-console
+      console.log('[AI_FORMAT_DEBUG] App cleanAiText', { preview: (cleanAiText || '').slice(0, 800) });
+      // eslint-disable-next-line no-console
+      console.log('[AI_FORMAT_DEBUG] App parsedAiSections', {
+        count: parsedAiSections.length,
+        labels: parsedAiSections.map((s) => s.label),
+        isStructured: parsedAiSections.length > 0,
+      });
+    } catch {
+      // ignore
+    }
+  }, [aiText, cleanAiText, parsedAiSections]);
   const techStack = useMemo(
     () => [
       {
@@ -472,7 +761,7 @@ export default function App() {
   );
   const integrationUseCases = useMemo(
     () => [
-      { icon: '🖍️', title: 'AI Whiteboard', blurb: 'Brainstorm, sketch, and get real-time summaries and math derivations.' },
+      { icon: '🖍️', title: 'AI Whiteboard', blurb: 'Brainstorm, sketch, and get instant AI feedback from your canvas.' },
       { icon: '📝', title: 'Smart Notes', blurb: 'Auto-capture meeting minutes or lecture notes with export-ready snapshots.' },
       { icon: '🎓', title: 'LMS Companion', blurb: 'Embed Cognito in courseware to give students instant visual feedback.' },
       { icon: '⚙️', title: 'Platform Add-on', blurb: 'Extend your product or OS with AI-powered diagramming and review.' },
@@ -657,7 +946,7 @@ export default function App() {
         <div className="header-inner">
           <div className="brand">
             <div className="brand-mark">
-              <img src={logoImage} alt="Cognito logo" width={120} height={32} decoding="async" />
+              <img src={logoImage} alt="Cognito AI Canvas" width={120} height={32} decoding="async" />
             </div>
           </div>
           {isMobile ? (
@@ -1051,31 +1340,8 @@ export default function App() {
                 <h2>AI Response</h2>
                 <button className="icon-btn" data-tooltip="Copy" title="Copy" onClick={() => navigator.clipboard.writeText(aiText)}>⧉</button>
               </div>
-              <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`}>
-                {parsedAiSections.length && !isAnalyzing ? (
-                  <div className="ai-output-structured">
-                    {parsedAiSections.map((section) => (
-                      <section key={section.slug} className="ai-section" data-section={section.slug}>
-                        <span className="ai-section-label">{section.label}</span>
-                        {section.items.length === 0 ? (
-                          <p className="ai-section-text">-</p>
-                        ) : section.isList ? (
-                          <ul className="ai-section-list">
-                            {section.items.map((item, idx) => (
-                              <li key={`${section.slug}-${idx}`}>{item}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          section.items.map((item, idx) => (
-                            <p key={`${section.slug}-${idx}`} className="ai-section-text">{item}</p>
-                          ))
-                        )}
-                      </section>
-                    ))}
-                  </div>
-                ) : (
-                  <div dangerouslySetInnerHTML={{ __html: markdownToHtml(aiText) }} />
-                )}
+              <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
+                <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
               </div>
             </div>
           </aside>
@@ -1085,33 +1351,10 @@ export default function App() {
             <div className={`card ${aiBorderActive ? 'beam' : ''}`} id="ai-card">
               <div className="card-header">
                 <h2>AI Response</h2>
-                <button className="icon-btn" title="Copy" onClick={() => navigator.clipboard.writeText(aiText)}>⧉</button>
+                <button className="icon-btn" title="Copy" onClick={() => navigator.clipboard.writeText(cleanAiText)}>⧉</button>
               </div>
-              <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`}>
-                {parsedAiSections.length && !isAnalyzing ? (
-                  <div className="ai-output-structured">
-                    {parsedAiSections.map((section) => (
-                      <section key={section.slug} className="ai-section" data-section={section.slug}>
-                        <span className="ai-section-label">{section.label}</span>
-                        {section.items.length === 0 ? (
-                          <p className="ai-section-text">-</p>
-                        ) : section.isList ? (
-                          <ul className="ai-section-list">
-                            {section.items.map((item, idx) => (
-                              <li key={`${section.slug}-${idx}`}>{item}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          section.items.map((item, idx) => (
-                            <p key={`${section.slug}-${idx}`} className="ai-section-text">{item}</p>
-                          ))
-                        )}
-                      </section>
-                    ))}
-                  </div>
-                ) : (
-                  <div dangerouslySetInnerHTML={{ __html: markdownToHtml(aiText) }} />
-                )}
+              <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
+                <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
               </div>
             </div>
           </aside>
@@ -1162,7 +1405,7 @@ export default function App() {
             <button className="icon-btn" onClick={() => setShowLimit(false)} aria-label="Close">✕</button>
           </div>
           <div className="about-body">
-            <p>You’ve used your 10 AI requests for the day. Please try again later.</p>
+            <p>You've used your 30 AI requests for the day. Please try again later.</p>
             <p>Want higher limits? Share feedback to help us plan upgrades.</p>
             <div style={{ display:'flex', gap:8, marginTop:12 }}>
               <a className="btn accent" href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer">Give feedback</a>

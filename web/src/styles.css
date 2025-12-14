@@ -56,6 +56,16 @@
   --grid-axis: rgba(14, 165, 233, 0.45);
   --select-arrow-color: #9db8d6;
   --select-divider-color: rgba(148, 163, 184, 0.35);
+
+  /* Canvas sizing */
+  --canvas-desktop-height: 760px;
+
+  /* AI math styling (KaTeX) - dark */
+  --ai-math-fg: var(--color-primary);
+  --ai-math-bg: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  --ai-math-border: color-mix(in srgb, var(--color-primary) 26%, var(--color-border));
+  --ai-math-display-bg: color-mix(in srgb, var(--color-border) 14%, transparent);
+  --ai-math-display-border: color-mix(in srgb, var(--color-primary) 58%, var(--color-border));
 }
 
 :root.light, [data-theme="light"], .light-theme {
@@ -82,6 +92,13 @@
   --grid-axis: rgba(14, 165, 233, 0.45);
   --select-arrow-color: #526070;
   --select-divider-color: rgba(148, 163, 184, 0.5);
+
+  /* AI math styling (KaTeX) - light */
+  --ai-math-fg: var(--color-primary);
+  --ai-math-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --ai-math-border: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+  --ai-math-display-bg: color-mix(in srgb, var(--color-border) 18%, transparent);
+  --ai-math-display-border: color-mix(in srgb, var(--color-primary) 60%, var(--color-border));
 }
 
 * { box-sizing: border-box; }
@@ -285,7 +302,7 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
 .num-input { display:none; }
 .unit { color: var(--color-text-secondary); font-size: 12px; }
 .canvas-wrap { background:var(--color-canvas); border:1px solid var(--color-border); border-radius:var(--radius-md); min-height:60vh; display:grid; place-items:center; overflow:hidden; position: relative; animation: floatIn var(--motion-normal) var(--ease-standard) both; height: 60vh; max-height: 60vh; width: 100%; }
-.canvas-wrap::before { content:""; position:absolute; width:360px; height:360px; border-radius:50%; left: calc(var(--mx, -200px) - 180px); top: calc(var(--my, -200px) - 180px); background: radial-gradient(closest-side, rgba(14,165,233,.14), rgba(14,165,233,0)); pointer-events:none; filter: blur(8px); opacity: .0; transition: opacity var(--motion-fast) var(--ease-standard); }
+.canvas-wrap::before { content:""; position:absolute; width:360px; height:360px; border-radius:50%; left: var(--mx, -200px); top: var(--my, -200px); transform: translate(-50%, -50%); background: radial-gradient(closest-side, rgba(14,165,233,.14), rgba(14,165,233,0)); pointer-events:none; filter: blur(8px); opacity: .0; transition: opacity var(--motion-fast) var(--ease-standard); }
 .canvas-wrap:hover::before { opacity: .9; }
 .board { display:block; width:100%; height:100%; border-radius:var(--radius-md); }
 .board-stack { touch-action: none; }
@@ -496,34 +513,397 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
 .side-panel .card { flex:1; display:flex; flex-direction:column; min-height:0; animation: floatIn var(--motion-normal) var(--ease-standard) 90ms both; overflow:hidden; }
 .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem; }
 .card-header h2 { margin: 0; }
-.ai-output { color:var(--color-text-secondary); white-space:pre-wrap; line-height:1.6; font-size:0.92rem; padding:0; margin:0; flex:1; overflow-y:auto; overflow-x:hidden; scrollbar-width: thin; min-height:0; }
-.ai-output :global(p) { margin: 0.5em 0; }
+.ai-output { 
+  color: var(--color-text);
+  /* Avoid "dead space" created by preserving raw newlines/spaces */
+  white-space: normal; 
+  line-height: 1.55; 
+  font-size: 0.92rem; 
+  padding: 0.6rem 0.5rem; 
+  margin: 0; 
+  flex: 1; 
+  overflow-y: auto; 
+  overflow-x: hidden; 
+  scrollbar-width: thin; 
+  min-height: 0;
+  /* Remove dead space at start/end */
+  text-align: left;
+  font-family: Manrope, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Style divs created by renderMathOnly for minimal formatting */
+.ai-output :global(div) {
+  margin: 0.4em 0;
+}
+
+.ai-output :global(div:first-child) {
+  margin-top: 0;
+}
+
+.ai-output :global(div:last-child) {
+  margin-bottom: 0;
+}
+/* CRITICAL: Prevent line breaks in inline math - keep expressions together */
+.ai-output :global(mjx-container:not([display="true"])), 
+.ai-output :global(.MathJax:not(.MathJax_Display)), 
+.ai-output :global(.MathJax_SVG:not(.MathJax_SVG_Display)) {
+  white-space: nowrap !important;
+  display: inline !important;
+  vertical-align: baseline;
+}
+/* Keep option text together (A) text, B) text, etc.) */
+.ai-output :global(.option-text) {
+  white-space: nowrap;
+  display: inline-block;
+}
+.ai-output :global(li strong) {
+  white-space: nowrap;
+  display: inline-block;
+}
+/* Prevent breaking in list items with options (A), B), C)) */
+.ai-output :global(li) {
+  word-break: break-word;
+}
+/* Ensure paragraphs and list items allow inline math to flow naturally */
+.ai-output :global(p), .ai-output :global(li) {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.ai-output :global(p) { 
+  margin: 0.3em 0;
+  text-align: left;
+  line-height: 1.65;
+  padding-left: 0.85rem;
+  border-left: 2px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+}
+.ai-output :global(p:first-child) { margin-top: 0; }
+.ai-output :global(p:last-child) { margin-bottom: 0; }
+/* Remove extra spacing in paragraphs with only math */
+.ai-output :global(p:has(.katex:only-child)),
+.ai-output :global(p:has(.MathJax:only-child)),
+.ai-output :global(p:has(mjx-container:only-child)) {
+  margin: 0.3em 0;
+}
 .ai-output :global(strong), .ai-output :global(b) { font-weight: 600; color: var(--color-text); }
 .ai-output :global(em), .ai-output :global(i) { font-style: italic; }
 .ai-output :global(code) { background: color-mix(in srgb, var(--color-border) 30%, transparent); padding: 0.15em 0.4em; border-radius: 4px; font-family: 'Monaco', 'Menlo', 'Courier New', monospace; font-size: 0.9em; }
 .ai-output :global(pre) { background: color-mix(in srgb, var(--color-border) 20%, transparent); padding: 0.75rem; border-radius: 6px; overflow-x: auto; margin: 0.75em 0; }
 .ai-output :global(pre code) { background: none; padding: 0; }
-.ai-output :global(ul), .ai-output :global(ol) { margin: 0.5em 0; padding-left: 1.5em; }
-.ai-output :global(li) { margin: 0.25em 0; }
-.ai-output :global(h1), .ai-output :global(h2), .ai-output :global(h3), .ai-output :global(h4) { margin: 0.75em 0 0.5em 0; font-weight: 600; color: var(--color-text); }
-.ai-output :global(h1) { font-size: 1.2em; }
-.ai-output :global(h2) { font-size: 1.1em; }
-.ai-output :global(h3) { font-size: 1em; }
-.ai-output :global(blockquote) { border-left: 3px solid var(--color-primary); padding-left: 1em; margin: 0.75em 0; color: var(--color-text-secondary); font-style: italic; }
+.ai-output :global(ul), .ai-output :global(ol) { 
+  margin: 0.35em 0; 
+  padding-left: 1.35em;
+  padding-top: 0.05em;
+  padding-bottom: 0.05em;
+  /* Left guide border to visually group lists */
+  border-left: 2px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+  padding-inline-start: calc(1.35em + 0.85rem);
+}
+.ai-output :global(li) { 
+  margin: 0.22em 0; 
+  line-height: 1.6;
+}
+/* Remove dead space in list items with math */
+.ai-output :global(li:has(.katex)),
+.ai-output :global(li:has(.MathJax)),
+.ai-output :global(li:has(mjx-container)) {
+  margin: 0.35em 0;
+}
+.ai-output :global(h1), .ai-output :global(h2), .ai-output :global(h3), .ai-output :global(h4), .ai-output :global(h5), .ai-output :global(h6) { 
+  margin: 0.65em 0 0.25em 0; 
+  font-weight: 600; 
+  color: var(--color-text);
+  line-height: 1.3;
+}
+.ai-output :global(h1) { font-size: 1.3em; margin-top: 0.5em; }
+.ai-output :global(h2) { font-size: 1.15em; }
+.ai-output :global(h3) { font-size: 1.05em; }
+.ai-output :global(h4) { font-size: 1em; }
+.ai-output :global(h5) { font-size: 0.95em; }
+.ai-output :global(h6) { font-size: 0.9em; }
+/* Remove dead space after headers */
+.ai-output :global(h1 + *), 
+.ai-output :global(h2 + *), 
+.ai-output :global(h3 + *), 
+.ai-output :global(h4 + *), 
+.ai-output :global(h5 + *), 
+.ai-output :global(h6 + *) {
+  margin-top: 0.3em;
+}
+.ai-output :global(blockquote) {
+  border-left: 3px solid var(--color-primary);
+  padding-left: 0.9em;
+  margin: 0.6em 0;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+/* Display-math wrapper inserted by markdownToHtml so \[...\] never ends up inside <p> */
+.ai-output .ai-math-block {
+  margin: 0.55em 0;
+  padding-left: 0.85rem; /* align with paragraph guide */
+  border-left: 2px solid color-mix(in srgb, var(--color-border) 78%, transparent);
+}
 .ai-output :global(hr) { border: none; border-top: 1px solid var(--color-border); margin: 1em 0; }
+/* KaTeX styling for math rendering - Beautiful and clean */
+.ai-output :global(.katex) {
+  font-size: 1.05em;
+  display: inline-block;
+  margin: 0 0.15em;
+  padding: 0.1em 0.2em;
+  vertical-align: baseline;
+  white-space: nowrap !important;
+  line-height: 1.2;
+  color: var(--color-primary, #0ea5e9) !important;
+  background: var(--ai-math-bg);
+  border: 1px solid var(--ai-math-border);
+  border-radius: 3px;
+  /* Smooth rendering */
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Force ALL KaTeX math elements to be blue - comprehensive coverage */
+.ai-output :global(.katex),
+.ai-output :global(.katex *),
+.ai-output :global(.katex .mord),
+.ai-output :global(.katex .mop),
+.ai-output :global(.katex .mbin),
+.ai-output :global(.katex .mrel),
+.ai-output :global(.katex .mopen),
+.ai-output :global(.katex .mclose),
+.ai-output :global(.katex .mpunct),
+.ai-output :global(.katex .mord.mathnormal),
+.ai-output :global(.katex .mord .mord),
+.ai-output :global(.katex .mord .mop),
+.ai-output :global(.katex .mord .mbin),
+.ai-output :global(.katex .mord .mrel),
+.ai-output :global(.katex .msupsub),
+.ai-output :global(.katex .mfrac),
+.ai-output :global(.katex .sqrt),
+.ai-output :global(.katex .mtable),
+.ai-output :global(.katex .mtr),
+.ai-output :global(.katex .mtd),
+.ai-output :global(.katex .base),
+.ai-output :global(.katex .strut),
+.ai-output :global(.katex .vlist),
+.ai-output :global(.katex .vlist-t),
+.ai-output :global(.katex .vlist-r),
+.ai-output :global(.katex .vlist-s),
+.ai-output :global(.katex .sizing),
+.ai-output :global(.katex .fontsize-ensurer),
+.ai-output :global(.katex .mathdefault),
+.ai-output :global(.katex .mathit),
+.ai-output :global(.katex .mathrm),
+.ai-output :global(.katex .mathbf),
+.ai-output :global(.katex .boldsymbol),
+.ai-output :global(.katex .amsrm),
+.ai-output :global(.katex .mathbb),
+.ai-output :global(.katex .mathcal),
+.ai-output :global(.katex .mathfrak),
+.ai-output :global(.katex .mathscr),
+.ai-output :global(.katex .mathsf),
+.ai-output :global(.katex .mathtt) {
+  color: var(--color-primary, #0ea5e9) !important;
+}
+.ai-output :global(.katex-display) {
+  display: block;
+  margin: 1.2em auto;
+  padding: 0.8em 1em;
+  text-align: center;
+  white-space: normal;
+  background: var(--ai-math-display-bg);
+  border: 1px solid var(--ai-math-border);
+  border-radius: 6px;
+  border-left: 3px solid var(--ai-math-display-border);
+}
+.ai-output :global(.katex-display .katex) {
+  display: inline-block;
+  white-space: normal;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-size: 1.15em;
+  color: var(--color-primary, #0ea5e9) !important;
+}
+
+/* Force ALL display math elements to be blue - comprehensive coverage */
+.ai-output :global(.katex-display),
+.ai-output :global(.katex-display *),
+.ai-output :global(.katex-display .katex),
+.ai-output :global(.katex-display .katex *),
+.ai-output :global(.katex-display .katex .mord),
+.ai-output :global(.katex-display .katex .mop),
+.ai-output :global(.katex-display .katex .mbin),
+.ai-output :global(.katex-display .katex .mrel),
+.ai-output :global(.katex-display .katex .mopen),
+.ai-output :global(.katex-display .katex .mclose),
+.ai-output :global(.katex-display .katex .mpunct),
+.ai-output :global(.katex-display .katex .mord.mathnormal),
+.ai-output :global(.katex-display .katex .msupsub),
+.ai-output :global(.katex-display .katex .mfrac),
+.ai-output :global(.katex-display .katex .sqrt),
+.ai-output :global(.katex-display .katex .mtable),
+.ai-output :global(.katex-display .katex .mtr),
+.ai-output :global(.katex-display .katex .mtd),
+.ai-output :global(.katex-display .katex .base),
+.ai-output :global(.katex-display .katex .mathdefault),
+.ai-output :global(.katex-display .katex .mathit),
+.ai-output :global(.katex-display .katex .mathrm),
+.ai-output :global(.katex-display .katex .mathbf),
+.ai-output :global(.katex-display .katex .boldsymbol) {
+  color: var(--color-primary, #0ea5e9) !important;
+}
+/* MathJax styling for better readability - INLINE MATH MUST STAY INLINE (fallback) */
+.ai-output :global(.MathJax), .ai-output :global(.MathJax_SVG) { 
+  display: inline !important; 
+  margin: 0 0.15em;
+  padding: 0.1em 0.2em;
+  vertical-align: baseline;
+  font-size: 1.05em;
+  white-space: nowrap !important;
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  border-radius: 3px;
+  line-height: 1.2;
+}
+.ai-output :global(.MathJax_Display), .ai-output :global(.MathJax_SVG_Display) {
+  display: block;
+  margin: 1.2em auto;
+  text-align: center;
+  padding: 0.8em 1em;
+  background: color-mix(in srgb, var(--color-border) 10%, transparent);
+  border-radius: 6px;
+  border-left: 3px solid var(--color-primary);
+}
+.ai-output :global(mjx-container) {
+  display: inline !important;
+  margin: 0 0.15em;
+  padding: 0.1em 0.2em;
+  vertical-align: baseline;
+  white-space: nowrap !important;
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  border-radius: 3px;
+  line-height: 1.2;
+}
+.ai-output :global(mjx-container[display="true"]) {
+  display: block !important;
+  margin: 1.2em auto;
+  text-align: center;
+  padding: 0.8em 1em;
+  white-space: normal;
+  background: color-mix(in srgb, var(--color-border) 10%, transparent);
+  border-radius: 6px;
+  border-left: 3px solid var(--color-primary);
+}
+/* Block math ($$...$$) styling */
+.ai-output :global(mjx-container[display="true"] mjx-math) {
+  font-size: 1.15em;
+}
+/* CRITICAL: Prevent line breaks in inline math - keep expressions together */
+.ai-output :global(p), .ai-output :global(li) {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.ai-output :global(p:has(mjx-container:not([display="true"]))), 
+.ai-output :global(li:has(mjx-container:not([display="true"]))) {
+  white-space: normal;
+}
+/* Ensure inline math doesn't break across lines */
+.ai-output :global(mjx-container:not([display="true"])) {
+  white-space: nowrap !important;
+  display: inline !important;
+}
+/* Improve spacing around math formulas - Remove dead space */
+.ai-output :global(p) { 
+  margin: 0.5em 0; 
+  line-height: 1.7;
+}
+.ai-output :global(p:has(.katex)), 
+.ai-output :global(p:has(.MathJax)), 
+.ai-output :global(p:has(mjx-container)) {
+  line-height: 1.8;
+  margin: 0.4em 0;
+}
+/* Better formatting for definitions and lists with math */
+.ai-output :global(li:has(.katex)),
+.ai-output :global(li:has(.MathJax)), 
+.ai-output :global(li:has(mjx-container)) {
+  line-height: 1.7;
+  margin: 0.4em 0;
+  padding: 0.1em 0;
+}
+/* Remove extra spacing around math in lists */
+.ai-output :global(li .katex),
+.ai-output :global(li .MathJax),
+.ai-output :global(li mjx-container) {
+  margin-left: 0.1em;
+  margin-right: 0.1em;
+}
+/* Improve list formatting for multiple choice options */
+.ai-output :global(li strong) {
+  color: var(--color-primary);
+  font-weight: 600;
+  margin-right: 0.3em;
+}
 .ai-output::-webkit-scrollbar { width: 6px; }
 .ai-output::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--color-border) 75%, transparent); border-radius: 9999px; }
 .ai-output.loading { position: relative; color: transparent; }
 .ai-output.loading::after { content: " "; display:block; height: 8px; border-radius: 6px; background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.12), rgba(255,255,255,0.02)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; box-shadow: 0 10px 0 0 currentColor, 0 20px 0 0 currentColor, 0 30px 0 0 currentColor; opacity: .7; }
-.ai-output-structured { display:flex; flex-direction:column; gap:14px; color: var(--color-text); white-space: normal; padding-right:6px; }
-.ai-section { display:flex; flex-direction:column; gap:6px; border-left:1px solid var(--color-border); padding-left:14px; }
-.ai-section-label { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.22em; color: color-mix(in srgb, var(--color-text) 70%, transparent); }
-.ai-section-text { font-size:0.9rem; line-height:1.6; color: var(--color-text-secondary); }
-.ai-section-list { margin:0; padding-left:1.1rem; display:grid; gap:6px; color: var(--color-text-secondary); }
+.ai-output-structured {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--color-text);
+  white-space: normal;
+  padding-right: 6px;
+}
+
+/* Professional “section card” styling (does NOT touch formulas) */
+.ai-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 2px solid color-mix(in srgb, var(--color-border) 85%, transparent);
+  padding-left: 14px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+}
+.ai-section-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+}
+.ai-section-text { font-size:0.9rem; line-height:1.6; color: var(--color-text); }
+.ai-section-list { margin:0; padding-left:1.1rem; display:grid; gap:6px; color: var(--color-text); }
 .ai-section-list li { font-size:0.9rem; line-height:1.5; }
 .ai-section[data-section="title"] { border-left:0; padding-left:0; }
-.ai-section[data-section="title"] .ai-section-label { color: var(--color-primary); font-size:0.75rem; letter-spacing:0.28em; }
-.ai-section[data-section="title"] .ai-section-text { font-weight:600; color: var(--color-text); font-size:1rem; }
+.ai-section[data-section="title"] {
+  border-left: 3px solid var(--color-primary);
+  padding-left: 14px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.ai-section[data-section="title"] .ai-section-label {
+  color: var(--color-primary);
+  font-size: 0.72rem;
+  letter-spacing: 0.28em;
+  opacity: 0.95;
+}
+.ai-section[data-section="title"] .ai-section-text {
+  font-weight: 750;
+  color: var(--color-text);
+  font-size: 1.05rem;
+  line-height: 1.35;
+  margin-top: 2px;
+}
 .ai-section[data-section="answer"] { border-left-color: var(--color-primary); }
 .ai-section[data-section="answer"] .ai-section-label { color: var(--color-primary); }
 .ai-section[data-section="answer"] .ai-section-text { color: var(--color-text); font-weight:600; }
@@ -807,12 +1187,18 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
 @media (min-width: 1024px) {
   .app-header { padding: 10px 0; }
   /* Desktop: left vertical tools, canvas, right panel */
-  .app-main { grid-template-columns: 160px 1fr 260px; gap: 1.1rem; align-items: start; }
+  .app-main { grid-template-columns: 160px 1fr 240px; gap: 1.25rem; align-items: start; }
   .tools { align-self: start; height: fit-content; display: grid; grid-template-columns: 1fr; z-index: 10; }
   .tools .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .tools .icon-row { display: grid; grid-template-columns: repeat(3, 1fr); }
-  .canvas-wrap { height: 72vh; min-height: 72vh; max-height: 72vh; }
-  .side-panel { height: 72vh; min-height: 72vh; max-height: 72vh; }
+
+  /* Desktop: keep canvas height stable (no vh-based resizing on window resize) */
+  .canvas-wrap,
+  .side-panel {
+    height: var(--canvas-desktop-height);
+    min-height: var(--canvas-desktop-height);
+    max-height: var(--canvas-desktop-height);
+  }
 }
 
 /* Mobile and tablet: tools horizontal above canvas */
@@ -886,13 +1272,7 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
   }
 }
 
-@media (min-width: 1024px) {
-  .app-header { padding: 10px 0; }
-  .app-main { grid-template-columns: 160px 1fr 240px; gap: 1.25rem; align-items: start; }
-  .canvas-wrap { height: 78vh; min-height: 78vh; max-height: 78vh; }
-  .side-panel { height: 78vh; min-height: 78vh; max-height: 78vh; }
-  .btn { padding: 12px 20px; }
-}
+/* (consolidated desktop min-width: 1024px rules above) */
 
 /* Simple tooltip using title/data-tooltip attribute */
 [data-tooltip] { position: relative; }
@@ -1160,7 +1540,6 @@ input[type="range"]::-moz-range-thumb:hover { transform: scale(1.1); }
 .ask-label { font-size:0.72rem; text-transform:uppercase; letter-spacing:0.2em; color: color-mix(in srgb, var(--color-text) 58%, transparent); }
 .ai-mobile { margin-top:12px; }
 .ai-mobile .card { width:100%; }
-
 @media (max-width: 1023px) {
   .canvas-overlay { top:16px; right:12px; }
   .history-popover { right:12px; }
