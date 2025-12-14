@@ -9,8 +9,7 @@ import {
   Redo2,
   Eraser,
   PenLine,
-  Pencil,
-  Highlighter,
+  MousePointer2,
   Palette,
   SlidersHorizontal,
   Download as DownloadIcon,
@@ -24,6 +23,8 @@ import {
   Layers,
   Eye,
   EyeOff,
+  Lock,
+  Unlock,
   Plus,
   ChevronUp,
   Sun,
@@ -374,6 +375,30 @@ export default function App() {
   const [brush, setBrush] = useState<BrushKind>('brush');
   const [size, setSize] = useState(8);
   const [color, setColor] = useState('#FFFFFF');
+  const [eraserMode, setEraserMode] = useState<'pixel' | 'stroke'>(() => {
+    try {
+      const v = localStorage.getItem('COGNITO_ERASER_MODE');
+      return v === 'stroke' ? 'stroke' : 'pixel';
+    } catch {
+      return 'pixel';
+    }
+  });
+  const [shapeFill, setShapeFill] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('COGNITO_SHAPE_FILL') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [recentColors, setRecentColors] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('COGNITO_RECENT_COLORS');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
   const [aiText, setAiText] = useState('Draw something and press "Ask AI".');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiBorderActive, setAiBorderActive] = useState(false);
@@ -463,9 +488,8 @@ export default function App() {
   };
   const brushOptions = useMemo<BrushOption[]>(
     () => [
+      { key: 'select', label: 'Select', Icon: MousePointer2 },
       { key: 'brush', label: 'Brush', Icon: PenLine },
-      { key: 'marker', label: 'Marker', Icon: Pencil },
-      { key: 'highlighter', label: 'Highlighter', Icon: Highlighter },
       { key: 'eraser', label: 'Eraser', Icon: Eraser },
       { key: 'line', label: 'Line', glyph: '／' },
       { key: 'rect', label: 'Rectangle', glyph: '▭' },
@@ -479,6 +503,12 @@ export default function App() {
     ],
     []
   );
+
+  const SHAPE_BRUSHES = useMemo(
+    () => new Set<BrushKind>(['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon']),
+    []
+  );
+  const brushIsShape = SHAPE_BRUSHES.has(brush);
   const howSections = useMemo(() => [
     {
       id: 'quick',
@@ -486,10 +516,13 @@ export default function App() {
       icon: PenLine,
       type: 'ol' as const,
       items: [
-        'Pick a brush, color, and stroke size from the left rail.',
+        'Pick a tool, color, and stroke size from the left rail.',
+        'Use Select (V) to move strokes/text. Shift-click to multi-select, drag empty space to marquee-select.',
         'Sketch freely or drag images onto the canvas to annotate.',
-        'Zoom with the top-right controls; right-click drag to pan when zoomed.',
+        'Hold Shift while drawing shapes to snap (45° lines, perfect squares/circles).',
+        'Zoom with the bottom-right controls; press Space or H to pan (when zoomed).',
         'Toggle the grid from Tools → Grid if you need alignment guides.',
+        'Open Layers to lock a layer (locked layers can’t be edited/drawn on).',
         (
           <>
             <span className="how-inline-icon"><Send size={14} /></span>
@@ -532,19 +565,37 @@ export default function App() {
         (
           <>
             <span className="how-inline-icon"><PenLine size={14} /></span>
-            <span className="how-text">Brushes – brush, eraser, line, rectangle, ellipse.</span>
+            <span className="how-text">Tools – Select, brush, eraser, shapes, and text.</span>
+          </>
+        ),
+        (
+          <>
+            <span className="how-inline-icon"><MousePointer2 size={14} /></span>
+            <span className="how-text">Shortcuts – V(select), B(brush), E(eraser), T(text), H(hand/pan).</span>
           </>
         ),
         (
           <>
             <span className="how-inline-icon"><PenLine size={14} /></span>
-            <span className="how-text">Size &amp; Color – fine-tune stroke weight and palette.</span>
+            <span className="how-text">Size &amp; Color – fine-tune stroke weight, fill shapes, and reuse recent colors.</span>
+          </>
+        ),
+        (
+          <>
+            <span className="how-inline-icon"><Eraser size={14} /></span>
+            <span className="how-text">Eraser modes – Pixel (paint erase) or Stroke (delete strokes).</span>
           </>
         ),
         (
           <>
             <span className="how-inline-icon"><GridIcon size={14} /></span>
             <span className="how-text">Grid – toggle guides and adjust spacing for layouts.</span>
+          </>
+        ),
+        (
+          <>
+            <span className="how-inline-icon"><Layers size={14} /></span>
+            <span className="how-text">Layers – hide/show, reorder, and lock layers to prevent edits.</span>
           </>
         ),
       ]
@@ -790,6 +841,38 @@ export default function App() {
     mq.addEventListener('change', set);
     return () => mq.removeEventListener('change', set);
   }, []);
+
+  // Keyboard shortcuts: V(select), B(brush), E(eraser), T(text), H(hand)
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const key = (e.key || '').toLowerCase();
+      if (key === 'v') {
+        e.preventDefault();
+        setIsHandMode(false);
+        setBrush('select');
+      } else if (key === 'b') {
+        e.preventDefault();
+        setIsHandMode(false);
+        setBrush('brush');
+      } else if (key === 'e') {
+        e.preventDefault();
+        setIsHandMode(false);
+        setBrush('eraser');
+      } else if (key === 't') {
+        e.preventDefault();
+        setIsHandMode(false);
+        setBrush('text');
+      } else if (key === 'h') {
+        e.preventDefault();
+        setIsHandMode((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'light' || saved === 'dark') return saved;
@@ -934,6 +1017,7 @@ export default function App() {
     // Immediate positioning: open to the right of the clicked icon, vertically centered.
     setToolPanelSide('right');
     setToolPanelLeft(btnRect.right + 10);
+    // Immediate positioning near the icon (final position is recalculated in layout effect).
     setToolPanelTop(Math.max(12, anchorY - 140));
     setToolArrowTop(140);
     setActiveToolPanel(key);
@@ -991,7 +1075,7 @@ export default function App() {
       const preferredLeft = side === 'right' ? rightLeft : leftLeft;
       const left = Math.max(PAD, Math.min((vw - PAD - panelW), preferredLeft));
 
-      // Vertically align around the clicked icon, but clamp in viewport.
+      // Always center vertically on the clicked icon (designer expectation), clamped to viewport.
       const h = Math.max(1, panelH || 0);
       const top = Math.max(PAD, Math.min((vh - PAD - h), anchorCenterY - h / 2));
       const arrow = Math.max(18, Math.min(Math.max(18, h - 18), anchorCenterY - top));
@@ -1017,6 +1101,45 @@ export default function App() {
     () => ['#FFFFFF', '#000000', '#00F0C8', '#00C2A8', '#FF6B6B', '#FFD166', '#06D6A0', '#118AB2', '#9B5DE5', '#F15BB5', '#FEE440', '#00BBF9'],
     []
   );
+
+  const colorSwatches = useMemo(() => {
+    const merged = [...recentColors, ...colors];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of merged) {
+      const v = String(c || '').toUpperCase();
+      if (!v) continue;
+      if (seen.has(v)) continue;
+      seen.add(v);
+      out.push(v);
+      if (out.length >= 18) break;
+    }
+    return out;
+  }, [recentColors, colors]);
+
+  const setColorWithRecents = React.useCallback((next: string) => {
+    setColor(next);
+    setRecentColors((prev) => {
+      const v = String(next || '').toUpperCase();
+      const nextList = [v, ...prev.filter((x) => String(x).toUpperCase() !== v)].slice(0, 8);
+      try {
+        localStorage.setItem('COGNITO_RECENT_COLORS', JSON.stringify(nextList));
+      } catch {}
+      return nextList;
+    });
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('COGNITO_ERASER_MODE', eraserMode);
+    } catch {}
+  }, [eraserMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('COGNITO_SHAPE_FILL', shapeFill ? '1' : '0');
+    } catch {}
+  }, [shapeFill]);
 
   const handleTextFieldChange = React.useCallback((field: CanvasTextField | null) => {
     setSelectedTextField(field);
@@ -1211,13 +1334,31 @@ export default function App() {
               )}
               {activeMobilePanel==='color' && (
                 <div className="mobile-panel" style={{ marginTop:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <ColorPicker value={color} onChange={setColor} swatches={colors} inline={true} />
+                  <ColorPicker value={color} onChange={setColorWithRecents} swatches={colorSwatches} inline={true} />
                 </div>
               )}
               {activeMobilePanel==='size' && (
                 <div className="mobile-panel" style={{ marginTop:8, display:'flex', flexDirection:'column', alignItems:'center' }}>
                   <label className="tool-label">Size <span id="size-value">{size}</span>px</label>
                   <SizeControl value={size} onChange={(n) => setSize(n)} min={1} max={64} />
+                  {brush === 'eraser' && (
+                    <div style={{ width: '100%', marginTop: 12 }}>
+                      <div className="tool-panel-title" style={{ marginTop: 0 }}>Eraser</div>
+                      <div className="segmented" role="group" aria-label="Eraser mode">
+                        <button className={`segmented-item ${eraserMode === 'pixel' ? 'active' : ''}`} onClick={() => setEraserMode('pixel')}>Pixel</button>
+                        <button className={`segmented-item ${eraserMode === 'stroke' ? 'active' : ''}`} onClick={() => setEraserMode('stroke')}>Stroke</button>
+                      </div>
+                    </div>
+                  )}
+                  {brushIsShape && (
+                    <div style={{ width: '100%', marginTop: 12 }}>
+                      <div className="tool-panel-title" style={{ marginTop: 0 }}>Shape</div>
+                      <label className="tool-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input type="checkbox" checked={shapeFill} onChange={(e) => setShapeFill(e.target.checked)} />
+                        Fill
+                      </label>
+                    </div>
+                  )}
                   {(brush === 'text' || selectedTextField) && (
                     <div style={{ width: '100%', marginTop:12 }}>
                       {selectedTextField ? (
@@ -1268,33 +1409,28 @@ export default function App() {
               <div className="tool-dock" ref={toolsDockRef}>
                 {/* Primary tools (always visible) */}
                 <button
+                  className={`tool-dock-btn ${brush === 'select' && !isHandMode ? 'active' : ''}`}
+                  onClick={() => selectBrushTool('select')}
+                  data-tooltip="Select"
+                  aria-label="Select"
+                  aria-pressed={brush === 'select' && !isHandMode}
+                >
+                  <MousePointer2 size={18} />
+                </button>
+                <button
                   className={`tool-dock-btn ${brush === 'brush' && !isHandMode ? 'active' : ''}`}
                   onClick={() => selectBrushTool('brush')}
-                  title="Brush"
+                  data-tooltip="Brush"
+                  aria-label="Brush"
                   aria-pressed={brush === 'brush' && !isHandMode}
                 >
                   <PenLine size={18} />
                 </button>
                 <button
-                  className={`tool-dock-btn ${brush === 'marker' && !isHandMode ? 'active' : ''}`}
-                  onClick={() => selectBrushTool('marker')}
-                  title="Marker"
-                  aria-pressed={brush === 'marker' && !isHandMode}
-                >
-                  <Pencil size={18} />
-                </button>
-                <button
-                  className={`tool-dock-btn ${brush === 'highlighter' && !isHandMode ? 'active' : ''}`}
-                  onClick={() => selectBrushTool('highlighter')}
-                  title="Highlighter"
-                  aria-pressed={brush === 'highlighter' && !isHandMode}
-                >
-                  <Highlighter size={18} />
-                </button>
-                <button
                   className={`tool-dock-btn ${brush === 'eraser' && !isHandMode ? 'active' : ''}`}
                   onClick={() => selectBrushTool('eraser')}
-                  title="Eraser"
+                  data-tooltip="Eraser"
+                  aria-label="Eraser"
                   aria-pressed={brush === 'eraser' && !isHandMode}
                 >
                   <Eraser size={18} />
@@ -1302,7 +1438,8 @@ export default function App() {
                 <button
                   className={`tool-dock-btn ${(activeToolPanel === 'shapes' || isShapeSelected) ? 'active' : ''}`}
                   onClick={toggleToolPanel('shapes')}
-                  title="Shapes"
+                  data-tooltip="Shapes"
+                  aria-label="Shapes"
                   aria-pressed={activeToolPanel === 'shapes'}
                 >
                   <Shapes size={18} />
@@ -1310,7 +1447,8 @@ export default function App() {
                 <button
                   className={`tool-dock-btn ${brush === 'text' && !isHandMode ? 'active' : ''}`}
                   onClick={() => selectBrushTool('text')}
-                  title="Text"
+                  data-tooltip="Text"
+                  aria-label="Text"
                   aria-pressed={brush === 'text' && !isHandMode}
                 >
                   <Type size={18} />
@@ -1322,19 +1460,21 @@ export default function App() {
                 <button
                   className={`tool-dock-btn ${isHandMode ? 'active' : ''}`}
                   onClick={() => setIsHandMode((v) => !v)}
-                  title="Hand / Pan"
+                  data-tooltip="Pan"
+                  aria-label="Pan"
                   aria-pressed={isHandMode}
                 >
                   <Hand size={18} />
                 </button>
-                <label className="tool-dock-btn" title="Add Image">
+                <label className="tool-dock-btn" data-tooltip="Add image" aria-label="Add image">
                   <ImageIcon size={18} />
                   <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onPickImage(e.target.files)} />
                 </label>
                 <button
                   className={`tool-dock-btn ${activeToolPanel === 'color' ? 'active' : ''}`}
                   onClick={toggleToolPanel('color')}
-                  title="Color"
+                  data-tooltip="Color"
+                  aria-label="Color"
                   aria-pressed={activeToolPanel === 'color'}
                 >
                   <Palette size={18} />
@@ -1342,7 +1482,8 @@ export default function App() {
                 <button
                   className={`tool-dock-btn ${activeToolPanel === 'size' ? 'active' : ''}`}
                   onClick={toggleToolPanel('size')}
-                  title="Size"
+                  data-tooltip="Size"
+                  aria-label="Size"
                   aria-pressed={activeToolPanel === 'size'}
                 >
                   <SlidersHorizontal size={18} />
@@ -1359,6 +1500,7 @@ export default function App() {
                     left: `${toolPanelLeft}px`,
                     top: `${toolPanelTop}px`,
                     ['--arrow-top' as any]: `${toolArrowTop}px`,
+                    ['--anchor-top' as any]: `${toolAnchorRect?.top ?? 0}px`,
                   }}
                   role="dialog"
                   aria-label="Tool options"
@@ -1382,7 +1524,7 @@ export default function App() {
                             onClick={() => selectBrushTool(key)}
                             title={label}
                           >
-                            <span className="tool-panel-item-icon"><Icon size={18} /></span>
+                            <span className="tool-panel-item-icon"><Icon size={14} /></span>
                           </button>
                         ))}
                       </div>
@@ -1392,7 +1534,7 @@ export default function App() {
                   {activeToolPanel === 'color' && (
                     <>
                       <div className="tool-panel-title">Color</div>
-                      <ColorPicker value={color} onChange={setColor} swatches={colors} inline={true} />
+                      <ColorPicker value={color} onChange={setColorWithRecents} swatches={colorSwatches} inline={true} />
                     </>
                   )}
 
@@ -1401,6 +1543,26 @@ export default function App() {
                       <div className="tool-panel-title">Size</div>
                       <label className="tool-label">Stroke <span id="size-value">{size}</span>px</label>
                       <SizeControl value={size} onChange={(n) => setSize(n)} min={1} max={64} />
+
+                      {brush === 'eraser' && (
+                        <div style={{ marginTop: 10 }}>
+                          <div className="tool-panel-title" style={{ marginTop: 8 }}>Eraser</div>
+                          <div className="segmented" role="group" aria-label="Eraser mode">
+                            <button className={`segmented-item ${eraserMode === 'pixel' ? 'active' : ''}`} onClick={() => setEraserMode('pixel')}>Pixel</button>
+                            <button className={`segmented-item ${eraserMode === 'stroke' ? 'active' : ''}`} onClick={() => setEraserMode('stroke')}>Stroke</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {brushIsShape && (
+                        <div style={{ marginTop: 10 }}>
+                          <div className="tool-panel-title" style={{ marginTop: 8 }}>Shape</div>
+                          <label className="tool-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input type="checkbox" checked={shapeFill} onChange={(e) => setShapeFill(e.target.checked)} />
+                            Fill
+                          </label>
+                        </div>
+                      )}
 
                       {(brush === 'text' || selectedTextField) && (
                         <div style={{ marginTop: 10 }}>
@@ -1473,6 +1635,8 @@ export default function App() {
             brush={brush}
             color={color}
             size={size}
+            eraserMode={eraserMode}
+            shapeFill={shapeFill}
             onHistoryUpdate={handleHistoryUpdate}
             showGrid={showGrid}
             onTextFieldChange={handleTextFieldChange}
@@ -1492,7 +1656,6 @@ export default function App() {
               >
                 <GridIcon size={16} />
               </button>
-              <button className="icon-btn" title="Save" onClick={() => boardRef.current?.saveBoard?.()}><Save size={16} /></button>
               <button className="icon-btn" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
               <button className="icon-btn" title="Clear Canvas" onClick={() => boardRef.current?.clear()}><Trash2 size={16} /></button>
             </div>
@@ -1588,7 +1751,7 @@ export default function App() {
               </div>
               <div className="layers-list">
                 {(() => {
-                  const layerList = layers.length ? layers : [{ id: 'layer-1', name: 'Layer 1', visible: true }];
+                  const layerList = layers.length ? layers : [{ id: 'layer-1', name: 'Layer 1', visible: true, locked: false }];
                   const listLen = layerList.length;
                   return layerList.map((layer, idx) => {
                   const isActive = layer.id === activeLayerId;
@@ -1608,6 +1771,18 @@ export default function App() {
                         }}
                       >
                         {layer.visible ? <Eye size={16} /> : <EyeOff size={16} />}
+                      </button>
+
+                      <button
+                        className="icon-btn small"
+                        title={layer.locked ? 'Unlock layer' : 'Lock layer'}
+                        aria-label={layer.locked ? 'Unlock layer' : 'Lock layer'}
+                        onClick={() => {
+                          boardRef.current?.toggleLayerLock?.(layer.id);
+                          refreshLayers();
+                        }}
+                      >
+                        {layer.locked ? <Lock size={16} /> : <Unlock size={16} />}
                       </button>
 
                       <div className="layers-main">
