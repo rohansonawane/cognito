@@ -205,6 +205,87 @@ app.post('/api/analyze', async (req, res) => {
   }
 });
 
+// AI-powered shape recognition endpoint
+app.post('/api/recognize-shapes', async (req, res) => {
+  try {
+    const { image, provider = 'openai', strokes } = req.body || {};
+    if (!image || typeof image !== 'string') return res.status(400).json({ ok: false, error: 'Missing image dataUrl' });
+    if (!['openai', 'gemini'].includes(provider)) return res.status(400).json({ ok: false, error: 'Invalid provider' });
+    const validImage = validateDataUrl(image, MAX_IMAGE_MB);
+
+    const shapePrompt = `Analyze this canvas drawing and identify any shapes that could be converted to perfect geometric shapes (rectangles, circles, ellipses, triangles, arrows, lines, diamonds, hexagons). 
+
+For each recognizable shape, return a JSON array with objects containing:
+- type: one of "rect", "ellipse", "line", "arrow", "triangle", "diamond", "hexagon"
+- bounds: {x, y, width, height} in canvas coordinates
+- confidence: 0-1 score
+
+Only return shapes with confidence > 0.7. Return empty array if no shapes detected.
+Return ONLY valid JSON, no markdown, no explanation.`;
+
+    let result;
+    if (provider === 'openai') {
+      if (!OPENAI_API_KEY) return res.status(500).json({ ok: false, error: 'Missing OPENAI_API_KEY' });
+      result = await analyzeOpenAI(validImage, shapePrompt, OPENAI_API_KEY);
+    } else {
+      if (!GEMINI_API_KEY) return res.status(500).json({ ok: false, error: 'Missing GEMINI_API_KEY' });
+      result = await analyzeGemini(validImage, shapePrompt, GEMINI_API_KEY);
+    }
+
+    // Try to parse JSON from response
+    try {
+      const jsonMatch = result.match(/\[[\s\S]*\]/);
+      const shapes = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+      return res.json({ ok: true, shapes: Array.isArray(shapes) ? shapes : [] });
+    } catch {
+      return res.json({ ok: true, shapes: [] });
+    }
+  } catch (e) {
+    console.error('Shape recognition error:', e);
+    const isDev = process.env.NODE_ENV === 'development';
+    return res.status(500).json({ ok: false, error: isDev ? String(e?.message || e) : 'Shape recognition failed' });
+  }
+});
+
+// AI layout suggestions endpoint
+app.post('/api/suggest-layout', async (req, res) => {
+  try {
+    const { image, provider = 'openai' } = req.body || {};
+    if (!image || typeof image !== 'string') return res.status(400).json({ ok: false, error: 'Missing image dataUrl' });
+    if (!['openai', 'gemini'].includes(provider)) return res.status(400).json({ ok: false, error: 'Invalid provider' });
+    const validImage = validateDataUrl(image, MAX_IMAGE_MB);
+
+    const layoutPrompt = `Analyze this canvas layout and suggest improvements. Return a JSON object with:
+- suggestions: array of improvement suggestions (strings)
+- alignment: suggested alignment strategy ("grid", "flow", "hierarchical", "centered")
+- spacing: recommended spacing between elements (number in pixels)
+- grouping: array of groups, each with {elements: [ids], reason: string}
+
+Return ONLY valid JSON, no markdown, no explanation.`;
+
+    let result;
+    if (provider === 'openai') {
+      if (!OPENAI_API_KEY) return res.status(500).json({ ok: false, error: 'Missing OPENAI_API_KEY' });
+      result = await analyzeOpenAI(validImage, layoutPrompt, OPENAI_API_KEY);
+    } else {
+      if (!GEMINI_API_KEY) return res.status(500).json({ ok: false, error: 'Missing GEMINI_API_KEY' });
+      result = await analyzeGemini(validImage, layoutPrompt, GEMINI_API_KEY);
+    }
+
+    try {
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      const layout = jsonMatch ? JSON.parse(jsonMatch[0]) : { suggestions: [], alignment: 'grid', spacing: 20 };
+      return res.json({ ok: true, layout });
+    } catch {
+      return res.json({ ok: true, layout: { suggestions: [], alignment: 'grid', spacing: 20 } });
+    }
+  } catch (e) {
+    console.error('Layout suggestion error:', e);
+    const isDev = process.env.NODE_ENV === 'development';
+    return res.status(500).json({ ok: false, error: isDev ? String(e?.message || e) : 'Layout suggestion failed' });
+  }
+});
+
 app.listen(PORT, () => console.log(`[ai-canvas-server] listening on http://127.0.0.1:${PORT}`));
 
 async function analyzeOpenAI(dataUrl, prompt, apiKey) {

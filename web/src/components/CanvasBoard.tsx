@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, type ForwardRefRenderFunction } from 'react';
 
 export type HistorySnapshot = {
   id: string;
@@ -15,16 +15,40 @@ type HistoryEntry = {
   label?: string;
 };
 
+export type ExportOptions = {
+  transparent?: boolean;
+  dpi?: number;
+  format?: 'png' | 'svg' | 'pdf';
+};
+
 export type CanvasBoardRef = {
   undo: () => void;
   redo: () => void;
   clear: () => void;
-  exportPng: () => string | null;
-  exportPngSelection?: () => string | null;
+  exportPng: (options?: ExportOptions) => string | null;
+  exportPngSelection?: (options?: ExportOptions) => string | null;
+  exportSvg?: (options?: ExportOptions) => string | null;
+  exportPdf?: (options?: ExportOptions) => Promise<Blob | null>;
   saveBoard?: () => void;
-  loadImage: (dataUrl: string) => void;
+  loadImage: (dataUrl: string) => string | null; // Returns image ID
+  addImage?: (dataUrl: string) => string | null; // Returns image ID
+  removeImage?: (imageId: string) => void;
+  getAllImages?: () => Array<{ id: string; opacity: number; rotation: number }>;
+  getImageState?: (imageId?: string) => { hasImage: boolean; opacity: number; rotation: number; crop?: { x: number; y: number; width: number; height: number } } | null;
+  setImageOpacity?: (opacity: number, imageId?: string) => void;
+  setImageRotation?: (rotation: number, imageId?: string) => void;
+  setImageSize?: (width: number, height: number, imageId?: string) => void;
+  setImagePosition?: (x: number, y: number, imageId?: string) => void;
+  cropImage?: (x: number, y: number, width: number, height: number, imageId?: string) => void;
+  selectImage?: (imageId?: string) => void;
+  isImageSelected?: () => boolean;
+  getSelectedImageId?: () => string | null;
   setZoom: (delta: number) => void;
   resetView: () => void;
+  zoomToFitSelection?: () => void;
+  zoomToFitAll?: () => void;
+  setCanvasSize?: (width: number, height: number) => void;
+  getCanvasSize?: () => { width: number; height: number } | null;
   getStrokesJSON?: () => string;
   setStrokesJSON?: (json: string) => void;
   createHistorySnapshot?: (label?: string) => void;
@@ -33,6 +57,14 @@ export type CanvasBoardRef = {
   deleteHistorySnapshot?: (entryId: string) => void;
   getSelectedTextField?: () => CanvasTextField | null;
   resizeSelectedTextField?: (size: { width?: number; height?: number }, options?: { commit?: boolean }) => void;
+  updateTextFieldFormatting?: (formatting: {
+    fontSize?: number;
+    fontFamily?: string;
+    fontWeight?: string;
+    fontStyle?: string;
+    textAlign?: 'left' | 'center' | 'right';
+    textColor?: string;
+  }) => void;
   // Layers
   getLayers?: () => CanvasLayer[];
   getActiveLayerId?: () => string;
@@ -44,9 +76,39 @@ export type CanvasBoardRef = {
   toggleLayerVisibility?: (layerId: string) => void;
   toggleLayerLock?: (layerId: string) => void;
   moveSelectedTextFieldToLayer?: (layerId: string) => void;
+  // Align/Distribute
+  alignSelected?: (alignment: 'left' | 'right' | 'center' | 'top' | 'bottom' | 'middle') => void;
+  distributeSelected?: (direction: 'horizontal' | 'vertical') => void;
+  // AI Enhancements
+  autoArrange?: () => void;
+  convertShapesToPerfect?: (shapes: Array<{ type: string; bounds: { x: number; y: number; width: number; height: number } }>) => void;
+  getSelectedStrokes?: () => Stroke[];
+  getAllStrokes?: () => Stroke[];
+  // Grouping
+  groupSelected?: () => void;
+  ungroupSelected?: () => void;
+  // Lock/Unlock
+  lockSelected?: () => void;
+  unlockSelected?: () => void;
+  // Z-order
+  bringToFront?: () => void;
+  sendToBack?: () => void;
+  // Flip
+  flipHorizontal?: () => void;
+  flipVertical?: () => void;
+  // Properties
+  getSelectedObjectsProperties?: () => {
+    strokes: Array<{ id: string; locked: boolean; color: string; size: number }>;
+    textFields: Array<{ id: string; locked: boolean; color: string; fontSize: number }>;
+  } | null;
+  updateSelectedObjectsProperties?: (props: {
+    color?: string;
+    fontSize?: number;
+    locked?: boolean;
+  }) => void;
 };
 
-export type ShapeKind = 'line' | 'rect' | 'ellipse' | 'arrow' | 'double-arrow' | 'triangle' | 'diamond' | 'hexagon';
+export type ShapeKind = 'line' | 'rect' | 'ellipse' | 'arrow' | 'double-arrow' | 'triangle' | 'diamond' | 'hexagon' | 'polygon' | 'star';
 export type BrushKind = 'select' | 'brush' | 'marker' | 'highlighter' | 'eraser' | ShapeKind | 'text';
 
 type Props = {
@@ -55,9 +117,13 @@ type Props = {
   size: number;
   eraserMode?: 'pixel' | 'stroke';
   shapeFill?: boolean;
+  cornerRadius?: number;
+  polygonSides?: number;
+  starPoints?: number;
   onHistoryUpdate?: (timeline: HistorySnapshot[]) => void;
   showGrid?: boolean;
   gridSize?: number;
+  showRulers?: boolean;
   onTextFieldChange?: (field: CanvasTextField | null) => void;
   panMode?: boolean;
 };
@@ -78,6 +144,10 @@ type Stroke = {
   points: Point[];
   closed?: boolean;
   layerId?: string;
+  cornerRadius?: number; // For rounded rectangles
+  sides?: number; // For polygons
+  starPoints?: number; // For stars (number of points)
+  locked?: boolean; // Lock individual object
 };
 type TextField = {
   id: string;
@@ -88,7 +158,13 @@ type TextField = {
   text: string;
   color: string;
   fontSize: number;
+  fontFamily: string;
+  fontWeight: string;
+  fontStyle: string;
+  textAlign: 'left' | 'center' | 'right';
+  textColor: string;
   layerId?: string;
+  locked?: boolean; // Lock individual object
 };
 
 export type CanvasTextField = {
@@ -100,7 +176,13 @@ export type CanvasTextField = {
   text: string;
   color: string;
   fontSize: number;
+  fontFamily: string;
+  fontWeight: string;
+  fontStyle: string;
+  textAlign: 'left' | 'center' | 'right';
+  textColor: string;
   layerId?: string;
+  locked?: boolean;
 };
 
 export type CanvasLayer = {
@@ -110,14 +192,45 @@ export type CanvasLayer = {
   locked?: boolean;
 };
 
-const SHAPE_KINDS: ShapeKind[] = ['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon'];
+export type ImagePlacement = {
+  dx: number;
+  dy: number;
+  dw: number;
+  dh: number;
+  rotation: number;
+  opacity: number;
+  crop?: { x: number; y: number; w: number; h: number };
+};
+
+export type CanvasImage = {
+  id: string;
+  image: HTMLImageElement;
+  placement: ImagePlacement;
+};
+
+const SHAPE_KINDS: ShapeKind[] = ['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon', 'polygon', 'star'];
 const SHAPE_SET = new Set<ShapeKind>(SHAPE_KINDS);
 const isShapeBrush = (mode: BrushKind): mode is ShapeKind => SHAPE_SET.has(mode as ShapeKind);
 // Touch-only: small delay so users can scroll the page without accidentally drawing.
 const HOLD_TO_DRAW_MS = 220;
 const HOLD_MOVE_THRESHOLD_PX = 4;
 
-export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, size, eraserMode = 'pixel', shapeFill = false, onHistoryUpdate, showGrid = false, gridSize = 6, onTextFieldChange, panMode = false }, ref) => {
+const CanvasBoardComponent: ForwardRefRenderFunction<CanvasBoardRef, Props> = ({
+  brush,
+  color,
+  size,
+  eraserMode = 'pixel',
+  shapeFill = false,
+  cornerRadius = 0,
+  polygonSides = 5,
+  starPoints = 5,
+  onHistoryUpdate,
+  showGrid = false,
+  gridSize = 6,
+  showRulers = false,
+  onTextFieldChange,
+  panMode = false
+}, ref) => {
   const bgRef = useRef<HTMLCanvasElement | null>(null);
   const gridRef = useRef<HTMLCanvasElement | null>(null);
   const drawRef = useRef<HTMLCanvasElement | null>(null);
@@ -141,14 +254,30 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const isPanningRef = useRef(false);
   const panStartRef = useRef<{x:number;y:number}>({x:0,y:0});
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const bgImageRef = useRef<HTMLImageElement | null>(null);
-  const bgPlacementRef = useRef<{dx:number;dy:number;dw:number;dh:number} | null>(null);
+  const imagesRef = useRef<Map<string, CanvasImage>>(new Map());
+  const selectedImageIdRef = useRef<string | null>(null);
+  const imageSelectedRef = useRef<boolean>(false);
+  const imageManipulationRef = useRef<{
+    isResizing: boolean;
+    isRotating: boolean;
+    isMoving: boolean;
+    isCropping: boolean;
+    resizeHandle?: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w';
+    cropStart?: { x: number; y: number };
+    cropEnd?: { x: number; y: number };
+    startPos?: { x: number; y: number };
+    startAngle?: number;
+    startRotation?: number;
+  } | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
   const textFieldsRef = useRef<TextField[]>([]);
   const layersRef = useRef<CanvasLayer[]>([{ id: 'layer-1', name: 'Layer 1', visible: true, locked: false }]);
   const activeLayerIdRef = useRef<string>('layer-1');
   const eraserModeRef = useRef<'pixel' | 'stroke'>(eraserMode);
   const shapeFillRef = useRef<boolean>(shapeFill);
+  const cornerRadiusRef = useRef<number>(cornerRadius);
+  const polygonSidesRef = useRef<number>(polygonSides);
+  const starPointsRef = useRef<number>(starPoints);
   const selectedStrokeIdsRef = useRef<Set<string>>(new Set());
   const draggingStrokesRef = useRef<{ start: { x: number; y: number }; originals: Map<string, Point[]> } | null>(null);
   const resizingStrokesRef = useRef<{
@@ -170,10 +299,13 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const marqueeRef = useRef<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
   const shiftPressedRef = useRef<boolean>(false);
   const editingTextFieldRef = useRef<string | null>(null);
-  const selectedTextFieldRef = useRef<string | null>(null);
+  const selectedTextFieldIdsRef = useRef<Set<string>>(new Set());
   const resizingTextFieldRef = useRef<{id: string; handle: 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's'} | null>(null);
   const draggingTextFieldRef = useRef<string | null>(null);
   const textFieldDragOffsetRef = useRef<{x: number; y: number} | null>(null);
+  const groupsRef = useRef<Map<string, { strokeIds: Set<string>; textFieldIds: Set<string> }>>(new Map());
+  const strokeGroupIdRef = useRef<Map<string, string>>(new Map()); // stroke id -> group id
+  const textFieldGroupIdRef = useRef<Map<string, string>>(new Map()); // text field id -> group id
   const textInputRef = useRef<HTMLTextAreaElement | null>(null);
   const measureCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const pointersRef = useRef<Map<number, {x:number;y:number}>>(new Map());
@@ -181,6 +313,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   const spacePressedRef = useRef<boolean>(false);
   const showGridRef = useRef<boolean>(showGrid);
   const gridSizeRef = useRef<number>(gridSize);
+  const showRulersRef = useRef<boolean>(showRulers);
   const pointerClientRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const pointerWorldRef = useRef<{ x: number; y: number } | null>(null);
   // Local pointer position in hit-layer coordinates (CSS pixels). Keeps cursor perfectly aligned.
@@ -336,6 +469,11 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     text: field.text,
     color: field.color,
     fontSize: field.fontSize,
+    fontFamily: field.fontFamily || 'sans-serif',
+    fontWeight: field.fontWeight || 'normal',
+    fontStyle: field.fontStyle || 'normal',
+    textAlign: field.textAlign || 'left',
+    textColor: field.textColor || field.color,
     layerId: field.layerId,
   });
 
@@ -401,6 +539,828 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     return { minX, minY, maxX, maxY };
   };
 
+  const getSelectionCenter = (bounds: { minX: number; minY: number; maxX: number; maxY: number }) => {
+    return { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+  };
+
+  const getAllContentBounds = () => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let hasContent = false;
+
+    // Get bounds from all visible strokes
+    for (const s of strokesRef.current) {
+      const layer = layersRef.current.find((l) => l.id === (s.layerId || layersRef.current[0]?.id || 'layer-1'));
+      if (layer && !layer.visible) continue;
+      const b = getStrokeBounds(s);
+      if (isFinite(b.minX) && isFinite(b.minY) && isFinite(b.maxX) && isFinite(b.maxY)) {
+        if (b.minX < minX) minX = b.minX;
+        if (b.minY < minY) minY = b.minY;
+        if (b.maxX > maxX) maxX = b.maxX;
+        if (b.maxY > maxY) maxY = b.maxY;
+        hasContent = true;
+      }
+    }
+
+    // Get bounds from all visible text fields
+    for (const f of textFieldsRef.current) {
+      const layer = layersRef.current.find((l) => l.id === (f.layerId || layersRef.current[0]?.id || 'layer-1'));
+      if (layer && !layer.visible) continue;
+      if (f.x < minX) minX = f.x;
+      if (f.y < minY) minY = f.y;
+      if (f.x + f.width > maxX) maxX = f.x + f.width;
+      if (f.y + f.height > maxY) maxY = f.y + f.height;
+      hasContent = true;
+    }
+
+    // Include all background images if present
+    for (const canvasImage of imagesRef.current.values()) {
+      const p = canvasImage.placement;
+      const worldX = (p.dx - panRef.current.x) / (zoomRef.current || 1);
+      const worldY = (p.dy - panRef.current.y) / (zoomRef.current || 1);
+      const worldW = p.dw / (zoomRef.current || 1);
+      const worldH = p.dh / (zoomRef.current || 1);
+      if (worldX < minX) minX = worldX;
+      if (worldY < minY) minY = worldY;
+      if (worldX + worldW > maxX) maxX = worldX + worldW;
+      if (worldY + worldH > maxY) maxY = worldY + worldH;
+      hasContent = true;
+    }
+
+    if (!hasContent || !isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+      return null;
+    }
+
+    return { minX, minY, maxX, maxY };
+  };
+
+  const zoomToBounds = (bounds: { minX: number; minY: number; maxX: number; maxY: number }) => {
+    const hit = hitRef.current as HTMLDivElement | null;
+    if (!hit) return;
+    const rect = hit.getBoundingClientRect();
+    const viewportWidth = rect.width;
+    const viewportHeight = rect.height;
+    
+    const contentWidth = bounds.maxX - bounds.minX;
+    const contentHeight = bounds.maxY - bounds.minY;
+    
+    if (contentWidth <= 0 || contentHeight <= 0) return;
+    
+    // Add padding (10% on each side)
+    const padding = 0.1;
+    const paddedWidth = contentWidth * (1 + padding * 2);
+    const paddedHeight = contentHeight * (1 + padding * 2);
+    
+    // Calculate zoom to fit
+    const zoomX = viewportWidth / paddedWidth;
+    const zoomY = viewportHeight / paddedHeight;
+    const newZoom = Math.min(zoomX, zoomY, 3); // Cap at 3x zoom
+    const finalZoom = Math.max(0.25, newZoom); // Floor at 0.25x zoom
+    
+    // Calculate center of content
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerY = (bounds.minY + bounds.maxY) / 2;
+    
+    // Calculate pan to center content
+    const newPanX = viewportWidth / 2 - centerX * finalZoom;
+    const newPanY = viewportHeight / 2 - centerY * finalZoom;
+    
+    zoomRef.current = finalZoom;
+    panRef.current = { x: newPanX, y: newPanY };
+    applyTransform();
+  };
+
+  const autoArrange = () => {
+    const items = getAllSelectedBounds();
+    if (items.length === 0) {
+      // If nothing selected, arrange all items
+      const allItems: Array<{ type: 'stroke' | 'text'; id: string; bounds: { minX: number; minY: number; maxX: number; maxY: number } }> = [];
+      
+      strokesRef.current.forEach(s => {
+        if (isLayerLocked(s.layerId || activeLayerIdRef.current)) return;
+        const b = getStrokeBounds(s);
+        allItems.push({ type: 'stroke', id: s.id, bounds: b });
+      });
+      
+      textFieldsRef.current.forEach(t => {
+        if (isLayerLocked(t.layerId || activeLayerIdRef.current)) return;
+        allItems.push({ 
+          type: 'text', 
+          id: t.id, 
+          bounds: { minX: t.x, minY: t.y, maxX: t.x + t.width, maxY: t.y + t.height } 
+        });
+      });
+      
+      if (allItems.length < 2) return;
+      
+      // Arrange in a grid layout
+      const cols = Math.ceil(Math.sqrt(allItems.length));
+      const spacing = 40;
+      const startX = 50;
+      const startY = 50;
+      
+      allItems.forEach((item, idx) => {
+        const row = Math.floor(idx / cols);
+        const col = idx % cols;
+        const targetX = startX + col * (200 + spacing);
+        const targetY = startY + row * (150 + spacing);
+        
+        if (item.type === 'stroke') {
+          const s = strokesRef.current.find(st => st.id === item.id);
+          if (s) {
+            const dx = targetX - item.bounds.minX;
+            const dy = targetY - item.bounds.minY;
+            s.points = s.points.map(p => ({ x: p.x + dx, y: p.y + dy, p: p.p }));
+          }
+        } else {
+          const f = textFieldsRef.current.find(t => t.id === item.id);
+          if (f) {
+            f.x = targetX;
+            f.y = targetY;
+          }
+        }
+      });
+    } else {
+      // Arrange selected items
+      const cols = Math.ceil(Math.sqrt(items.length));
+      const spacing = 40;
+      const startX = 50;
+      const startY = 50;
+      
+      items.forEach((item, idx) => {
+        const row = Math.floor(idx / cols);
+        const col = idx % cols;
+        const targetX = startX + col * (200 + spacing);
+        const targetY = startY + row * (150 + spacing);
+        
+        if (item.type === 'stroke') {
+          const s = strokesRef.current.find(st => st.id === item.id);
+          if (s) {
+            const dx = targetX - item.bounds.minX;
+            const dy = targetY - item.bounds.minY;
+            s.points = s.points.map(p => ({ x: p.x + dx, y: p.y + dy, p: p.p }));
+          }
+        } else {
+          const f = textFieldsRef.current.find(t => t.id === item.id);
+          if (f) {
+            f.x = targetX;
+            f.y = targetY;
+          }
+        }
+      });
+    }
+    
+    renderAll();
+    pushHistory();
+  };
+
+  const convertShapesToPerfect = (shapes: Array<{ type: string; bounds: { x: number; y: number; width: number; height: number } }>) => {
+    if (!Array.isArray(shapes) || shapes.length === 0) return;
+    
+    shapes.forEach((shape) => {
+      const { type, bounds } = shape;
+      if (!type || !bounds) return;
+      
+      // Find strokes that overlap with this shape's bounds
+      const overlappingStrokes = strokesRef.current.filter(s => {
+        if (s.mode !== 'brush' && s.mode !== 'marker') return false;
+        if (isLayerLocked(s.layerId || activeLayerIdRef.current)) return false;
+        const strokeBounds = getStrokeBounds(s);
+        // Check if stroke overlaps with shape bounds
+        return !(strokeBounds.maxX < bounds.x || 
+                 strokeBounds.minX > bounds.x + bounds.width ||
+                 strokeBounds.maxY < bounds.y ||
+                 strokeBounds.minY > bounds.y + bounds.height);
+      });
+      
+      if (overlappingStrokes.length === 0) return;
+      
+      // Create a perfect shape to replace the overlapping strokes
+      const shapeId = `shape-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const firstStroke = overlappingStrokes[0];
+      const color = firstStroke.color;
+      const size = firstStroke.size;
+      
+      // Generate points for the perfect shape
+      let points: Point[] = [];
+      const centerX = bounds.x + bounds.width / 2;
+      const centerY = bounds.y + bounds.height / 2;
+      
+      if (type === 'rect' || type === 'rectangle') {
+        points = [
+          { x: bounds.x, y: bounds.y, p: 1 },
+          { x: bounds.x + bounds.width, y: bounds.y, p: 1 },
+          { x: bounds.x + bounds.width, y: bounds.y + bounds.height, p: 1 },
+          { x: bounds.x, y: bounds.y + bounds.height, p: 1 },
+          { x: bounds.x, y: bounds.y, p: 1 }, // Close the rectangle
+        ];
+      } else if (type === 'ellipse' || type === 'circle') {
+        const radiusX = bounds.width / 2;
+        const radiusY = bounds.height / 2;
+        const segments = 32;
+        for (let i = 0; i <= segments; i++) {
+          const angle = (i / segments) * Math.PI * 2;
+          points.push({
+            x: centerX + radiusX * Math.cos(angle),
+            y: centerY + radiusY * Math.sin(angle),
+            p: 1
+          });
+        }
+      } else if (type === 'triangle') {
+        points = [
+          { x: centerX, y: bounds.y, p: 1 },
+          { x: bounds.x + bounds.width, y: bounds.y + bounds.height, p: 1 },
+          { x: bounds.x, y: bounds.y + bounds.height, p: 1 },
+          { x: centerX, y: bounds.y, p: 1 }, // Close
+        ];
+      } else if (type === 'line') {
+        points = [
+          { x: bounds.x, y: bounds.y, p: 1 },
+          { x: bounds.x + bounds.width, y: bounds.y + bounds.height, p: 1 },
+        ];
+      } else if (type === 'arrow') {
+        const arrowLength = Math.sqrt(bounds.width ** 2 + bounds.height ** 2);
+        const angle = Math.atan2(bounds.height, bounds.width);
+        const headLength = Math.min(arrowLength * 0.2, 20);
+        const headAngle = Math.PI / 6;
+        
+        const endX = bounds.x + bounds.width;
+        const endY = bounds.y + bounds.height;
+        
+        points = [
+          { x: bounds.x, y: bounds.y, p: 1 },
+          { x: endX, y: endY, p: 1 },
+          { 
+            x: endX - headLength * Math.cos(angle - headAngle), 
+            y: endY - headLength * Math.sin(angle - headAngle), 
+            p: 1 
+          },
+          { x: endX, y: endY, p: 1 },
+          { 
+            x: endX - headLength * Math.cos(angle + headAngle), 
+            y: endY - headLength * Math.sin(angle + headAngle), 
+            p: 1 
+          },
+        ];
+      }
+      
+      if (points.length > 0) {
+        // Remove overlapping strokes
+        overlappingStrokes.forEach(s => {
+          const idx = strokesRef.current.indexOf(s);
+          if (idx >= 0) strokesRef.current.splice(idx, 1);
+        });
+        
+        // Add the perfect shape
+        const shapeStroke: Stroke = {
+          id: shapeId,
+          mode: 'shape',
+          shape: type as ShapeKind,
+          color,
+          size,
+          fill: shapeFillRef.current,
+          points,
+          layerId: activeLayerIdRef.current,
+        };
+        strokesRef.current.push(shapeStroke);
+      }
+    });
+    
+    renderAll();
+    pushHistory();
+  };
+
+  const getSelectedStrokes = (): Stroke[] => {
+    return strokesRef.current.filter(s => selectedStrokeIdsRef.current.has(s.id));
+  };
+
+  const getAllStrokes = (): Stroke[] => {
+    return [...strokesRef.current];
+  };
+
+  const getAllSelectedBounds = () => {
+    const items: Array<{ id: string; type: 'stroke' | 'text'; bounds: { minX: number; minY: number; maxX: number; maxY: number } }> = [];
+    
+    // Add selected strokes
+    for (const id of selectedStrokeIdsRef.current) {
+      const s = strokesRef.current.find((st) => st.id === id);
+      if (!s) continue;
+      const b = getStrokeBounds(s);
+      items.push({ id, type: 'stroke', bounds: b });
+    }
+    
+    // Add selected text fields
+    for (const id of selectedTextFieldIdsRef.current) {
+      const f = textFieldsRef.current.find((t) => t.id === id);
+      if (f) {
+        items.push({
+          id: f.id,
+          type: 'text',
+          bounds: { minX: f.x, minY: f.y, maxX: f.x + f.width, maxY: f.y + f.height }
+        });
+      }
+    }
+    
+    return items;
+  };
+
+  const alignSelected = (alignment: 'left' | 'right' | 'center' | 'top' | 'bottom' | 'middle') => {
+    const items = getAllSelectedBounds();
+    if (items.length < 2) return; // Need at least 2 items to align
+    
+    // Calculate target position based on alignment
+    let targetX: number | null = null;
+    let targetY: number | null = null;
+    
+    if (alignment === 'left') {
+      targetX = Math.min(...items.map(i => i.bounds.minX));
+    } else if (alignment === 'right') {
+      targetX = Math.max(...items.map(i => i.bounds.maxX));
+    } else if (alignment === 'center') {
+      const centers = items.map(i => (i.bounds.minX + i.bounds.maxX) / 2);
+      targetX = (Math.min(...centers) + Math.max(...centers)) / 2;
+    } else if (alignment === 'top') {
+      targetY = Math.min(...items.map(i => i.bounds.minY));
+    } else if (alignment === 'bottom') {
+      targetY = Math.max(...items.map(i => i.bounds.maxY));
+    } else if (alignment === 'middle') {
+      const centers = items.map(i => (i.bounds.minY + i.bounds.maxY) / 2);
+      targetY = (Math.min(...centers) + Math.max(...centers)) / 2;
+    }
+    
+    // Apply alignment
+    for (const item of items) {
+      if (item.type === 'stroke') {
+        const s = strokesRef.current.find((st) => st.id === item.id);
+        if (!s) continue;
+        const b = getStrokeBounds(s);
+        const dx = targetX !== null ? targetX - (alignment === 'left' ? b.minX : alignment === 'right' ? b.maxX : (b.minX + b.maxX) / 2) : 0;
+        const dy = targetY !== null ? targetY - (alignment === 'top' ? b.minY : alignment === 'bottom' ? b.maxY : (b.minY + b.maxY) / 2) : 0;
+        if (dx !== 0 || dy !== 0) {
+          s.points = s.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+        }
+      } else if (item.type === 'text') {
+        const f = textFieldsRef.current.find((t) => t.id === item.id);
+        if (!f) continue;
+        const b = item.bounds;
+        if (targetX !== null) {
+          if (alignment === 'left') f.x = targetX;
+          else if (alignment === 'right') f.x = targetX - f.width;
+          else if (alignment === 'center') f.x = targetX - f.width / 2;
+        }
+        if (targetY !== null) {
+          if (alignment === 'top') f.y = targetY;
+          else if (alignment === 'bottom') f.y = targetY - f.height;
+          else if (alignment === 'middle') f.y = targetY - f.height / 2;
+        }
+      }
+    }
+    
+    pushHistory(`Align ${alignment}`, true);
+    renderAll();
+    renderSelectionOverlay();
+  };
+
+  const distributeSelected = (direction: 'horizontal' | 'vertical') => {
+    const items = getAllSelectedBounds();
+    if (items.length < 3) return; // Need at least 3 items to distribute
+    
+    // Sort items by position
+    if (direction === 'horizontal') {
+      items.sort((a, b) => {
+        const aCenter = (a.bounds.minX + a.bounds.maxX) / 2;
+        const bCenter = (b.bounds.minX + b.bounds.maxX) / 2;
+        return aCenter - bCenter;
+      });
+    } else {
+      items.sort((a, b) => {
+        const aCenter = (a.bounds.minY + a.bounds.maxY) / 2;
+        const bCenter = (b.bounds.minY + b.bounds.maxY) / 2;
+        return aCenter - bCenter;
+      });
+    }
+    
+    // Calculate total span and spacing
+    const first = items[0];
+    const last = items[items.length - 1];
+    let totalSpan: number;
+    let totalSize = 0;
+    
+    if (direction === 'horizontal') {
+      const firstCenter = (first.bounds.minX + first.bounds.maxX) / 2;
+      const lastCenter = (last.bounds.minX + last.bounds.maxX) / 2;
+      totalSpan = lastCenter - firstCenter;
+      for (let i = 1; i < items.length - 1; i++) {
+        const w = items[i].bounds.maxX - items[i].bounds.minX;
+        totalSize += w;
+      }
+    } else {
+      const firstCenter = (first.bounds.minY + first.bounds.maxY) / 2;
+      const lastCenter = (last.bounds.minY + last.bounds.maxY) / 2;
+      totalSpan = lastCenter - firstCenter;
+      for (let i = 1; i < items.length - 1; i++) {
+        const h = items[i].bounds.maxY - items[i].bounds.minY;
+        totalSize += h;
+      }
+    }
+    
+    const spacing = (totalSpan - totalSize) / (items.length - 1);
+    let currentPos: number;
+    
+    if (direction === 'horizontal') {
+      currentPos = (first.bounds.minX + first.bounds.maxX) / 2;
+    } else {
+      currentPos = (first.bounds.minY + first.bounds.maxY) / 2;
+    }
+    
+    // Distribute items
+    for (let i = 1; i < items.length - 1; i++) {
+      const item = items[i];
+      const size = direction === 'horizontal' 
+        ? (item.bounds.maxX - item.bounds.minX)
+        : (item.bounds.maxY - item.bounds.minY);
+      
+      currentPos += spacing;
+      const targetCenter = currentPos;
+      currentPos += size;
+      
+      if (item.type === 'stroke') {
+        const s = strokesRef.current.find((st) => st.id === item.id);
+        if (!s) continue;
+        const b = getStrokeBounds(s);
+        const currentCenter = direction === 'horizontal' 
+          ? (b.minX + b.maxX) / 2
+          : (b.minY + b.maxY) / 2;
+        const delta = targetCenter - currentCenter;
+        if (direction === 'horizontal') {
+          s.points = s.points.map(p => ({ x: p.x + delta, y: p.y }));
+        } else {
+          s.points = s.points.map(p => ({ x: p.x, y: p.y + delta }));
+        }
+      } else if (item.type === 'text') {
+        const f = textFieldsRef.current.find((t) => t.id === item.id);
+        if (!f) continue;
+        const b = item.bounds;
+        const currentCenter = direction === 'horizontal'
+          ? (b.minX + b.maxX) / 2
+          : (b.minY + b.maxY) / 2;
+        const delta = targetCenter - currentCenter;
+        if (direction === 'horizontal') {
+          f.x += delta;
+        } else {
+          f.y += delta;
+        }
+      }
+    }
+    
+    pushHistory(`Distribute ${direction}`, true);
+    renderAll();
+    renderSelectionOverlay();
+  };
+
+  // Grouping functions
+  const groupSelected = () => {
+    const strokeIds = Array.from(selectedStrokeIdsRef.current);
+    const textFieldIds = Array.from(selectedTextFieldIdsRef.current);
+    
+    if (strokeIds.length + textFieldIds.length < 2) return; // Need at least 2 objects
+    
+    // Collect old group IDs to clean up
+    const oldGroupIds = new Set<string>();
+    for (const id of strokeIds) {
+      const gid = strokeGroupIdRef.current.get(id);
+      if (gid) oldGroupIds.add(gid);
+    }
+    for (const id of textFieldIds) {
+      const gid = textFieldGroupIdRef.current.get(id);
+      if (gid) oldGroupIds.add(gid);
+    }
+    
+    // Remove old groups (they'll be replaced by the new group)
+    for (const gid of oldGroupIds) {
+      groupsRef.current.delete(gid);
+    }
+    
+    const groupId = createHistoryId();
+    groupsRef.current.set(groupId, {
+      strokeIds: new Set(strokeIds),
+      textFieldIds: new Set(textFieldIds),
+    });
+    
+    for (const id of strokeIds) {
+      strokeGroupIdRef.current.set(id, groupId);
+    }
+    for (const id of textFieldIds) {
+      textFieldGroupIdRef.current.set(id, groupId);
+    }
+    
+    pushHistory('Group objects', true);
+    renderSelectionOverlay();
+  };
+
+  const ungroupSelected = () => {
+    const strokeIds = Array.from(selectedStrokeIdsRef.current);
+    const textFieldIds = Array.from(selectedTextFieldIdsRef.current);
+    const groupIds = new Set<string>();
+    
+    // Find all groups that contain selected objects
+    for (const id of strokeIds) {
+      const gid = strokeGroupIdRef.current.get(id);
+      if (gid) groupIds.add(gid);
+    }
+    for (const id of textFieldIds) {
+      const gid = textFieldGroupIdRef.current.get(id);
+      if (gid) groupIds.add(gid);
+    }
+    
+    // Ungroup all found groups
+    for (const gid of groupIds) {
+      const group = groupsRef.current.get(gid);
+      if (!group) continue;
+      
+      for (const id of group.strokeIds) {
+        strokeGroupIdRef.current.delete(id);
+      }
+      for (const id of group.textFieldIds) {
+        textFieldGroupIdRef.current.delete(id);
+      }
+      
+      groupsRef.current.delete(gid);
+    }
+    
+    pushHistory('Ungroup objects', true);
+    renderSelectionOverlay();
+  };
+
+  // Lock/Unlock functions
+  const lockSelected = () => {
+    let changed = false;
+    
+    for (const id of selectedStrokeIdsRef.current) {
+      const s = strokesRef.current.find((st) => st.id === id);
+      if (s && !s.locked) {
+        s.locked = true;
+        changed = true;
+      }
+    }
+    
+    for (const id of selectedTextFieldIdsRef.current) {
+      const f = textFieldsRef.current.find((t) => t.id === id);
+      if (f && !f.locked) {
+        f.locked = true;
+        changed = true;
+      }
+    }
+    
+    if (changed) {
+      pushHistory('Lock objects', true);
+      renderAll();
+      renderSelectionOverlay();
+    }
+  };
+
+  const unlockSelected = () => {
+    let changed = false;
+    
+    for (const id of selectedStrokeIdsRef.current) {
+      const s = strokesRef.current.find((st) => st.id === id);
+      if (s && s.locked) {
+        s.locked = false;
+        changed = true;
+      }
+    }
+    
+    for (const id of selectedTextFieldIdsRef.current) {
+      const f = textFieldsRef.current.find((t) => t.id === id);
+      if (f && f.locked) {
+        f.locked = false;
+        changed = true;
+      }
+    }
+    
+    if (changed) {
+      pushHistory('Unlock objects', true);
+      renderAll();
+      renderSelectionOverlay();
+    }
+  };
+
+  // Z-order functions
+  const bringToFront = () => {
+    const strokeIds = Array.from(selectedStrokeIdsRef.current);
+    const textFieldIds = Array.from(selectedTextFieldIdsRef.current);
+    
+    if (strokeIds.length === 0 && textFieldIds.length === 0) return;
+    
+    // Move strokes to end of array (top of z-order) - skip locked objects
+    for (const id of strokeIds) {
+      const index = strokesRef.current.findIndex((s) => s.id === id);
+      if (index >= 0) {
+        const stroke = strokesRef.current[index];
+        if (stroke.locked) continue; // Skip locked objects
+        strokesRef.current.splice(index, 1);
+        strokesRef.current.push(stroke);
+      }
+    }
+    
+    // Move text fields to end of array (top of z-order) - skip locked objects
+    for (const id of textFieldIds) {
+      const index = textFieldsRef.current.findIndex((t) => t.id === id);
+      if (index >= 0) {
+        const field = textFieldsRef.current[index];
+        if (field.locked) continue; // Skip locked objects
+        textFieldsRef.current.splice(index, 1);
+        textFieldsRef.current.push(field);
+      }
+    }
+    
+    pushHistory('Bring to front', true);
+    renderAll();
+    renderSelectionOverlay();
+  };
+
+  const sendToBack = () => {
+    const strokeIds = Array.from(selectedStrokeIdsRef.current);
+    const textFieldIds = Array.from(selectedTextFieldIdsRef.current);
+    
+    if (strokeIds.length === 0 && textFieldIds.length === 0) return;
+    
+    // Move strokes to beginning of array (bottom of z-order) - skip locked objects
+    for (const id of strokeIds) {
+      const index = strokesRef.current.findIndex((s) => s.id === id);
+      if (index >= 0) {
+        const stroke = strokesRef.current[index];
+        if (stroke.locked) continue; // Skip locked objects
+        strokesRef.current.splice(index, 1);
+        strokesRef.current.unshift(stroke);
+      }
+    }
+    
+    // Move text fields to beginning of array (bottom of z-order) - skip locked objects
+    for (const id of textFieldIds) {
+      const index = textFieldsRef.current.findIndex((t) => t.id === id);
+      if (index >= 0) {
+        const field = textFieldsRef.current[index];
+        if (field.locked) continue; // Skip locked objects
+        textFieldsRef.current.splice(index, 1);
+        textFieldsRef.current.unshift(field);
+      }
+    }
+    
+    pushHistory('Send to back', true);
+    renderAll();
+    renderSelectionOverlay();
+  };
+
+  // Flip functions
+  const flipHorizontal = () => {
+    const items = getAllSelectedBounds();
+    if (items.length === 0) return;
+    
+    // Calculate center X of all selected objects
+    let minX = Infinity, maxX = -Infinity;
+    for (const item of items) {
+      if (item.bounds.minX < minX) minX = item.bounds.minX;
+      if (item.bounds.maxX > maxX) maxX = item.bounds.maxX;
+    }
+    const centerX = (minX + maxX) / 2;
+    
+    // Flip each object (skip locked objects)
+    for (const item of items) {
+      if (item.type === 'stroke') {
+        const s = strokesRef.current.find((st) => st.id === item.id);
+        if (!s || s.locked) continue; // Skip locked objects
+        s.points = s.points.map(p => ({
+          x: centerX - (p.x - centerX),
+          y: p.y,
+          p: p.p,
+        }));
+      } else if (item.type === 'text') {
+        const f = textFieldsRef.current.find((t) => t.id === item.id);
+        if (!f || f.locked) continue; // Skip locked objects
+        const oldCenterX = f.x + f.width / 2;
+        f.x = centerX - (oldCenterX - centerX) - f.width / 2;
+      }
+    }
+    
+    pushHistory('Flip horizontal', true);
+    renderAll();
+    renderSelectionOverlay();
+  };
+
+  const flipVertical = () => {
+    const items = getAllSelectedBounds();
+    if (items.length === 0) return;
+    
+    // Calculate center Y of all selected objects
+    let minY = Infinity, maxY = -Infinity;
+    for (const item of items) {
+      if (item.bounds.minY < minY) minY = item.bounds.minY;
+      if (item.bounds.maxY > maxY) maxY = item.bounds.maxY;
+    }
+    const centerY = (minY + maxY) / 2;
+    
+    // Flip each object (skip locked objects)
+    for (const item of items) {
+      if (item.type === 'stroke') {
+        const s = strokesRef.current.find((st) => st.id === item.id);
+        if (!s || s.locked) continue; // Skip locked objects
+        s.points = s.points.map(p => ({
+          x: p.x,
+          y: centerY - (p.y - centerY),
+          p: p.p,
+        }));
+      } else if (item.type === 'text') {
+        const f = textFieldsRef.current.find((t) => t.id === item.id);
+        if (!f || f.locked) continue; // Skip locked objects
+        const oldCenterY = f.y + f.height / 2;
+        f.y = centerY - (oldCenterY - centerY) - f.height / 2;
+      }
+    }
+    
+    pushHistory('Flip vertical', true);
+    renderAll();
+    renderSelectionOverlay();
+  };
+
+  // Properties functions
+  const getSelectedObjectsProperties = () => {
+    const strokes: Array<{ id: string; locked: boolean; color: string; size: number }> = [];
+    const textFields: Array<{ id: string; locked: boolean; color: string; fontSize: number }> = [];
+    
+    for (const id of selectedStrokeIdsRef.current) {
+      const s = strokesRef.current.find((st) => st.id === id);
+      if (s) {
+        strokes.push({
+          id: s.id,
+          locked: !!s.locked,
+          color: s.color,
+          size: s.size,
+        });
+      }
+    }
+    
+    for (const id of selectedTextFieldIdsRef.current) {
+      const f = textFieldsRef.current.find((t) => t.id === id);
+      if (f) {
+        textFields.push({
+          id: f.id,
+          locked: !!f.locked,
+          color: f.color,
+          fontSize: f.fontSize,
+        });
+      }
+    }
+    
+    if (strokes.length === 0 && textFields.length === 0) return null;
+    
+    return { strokes, textFields };
+  };
+
+  const updateSelectedObjectsProperties = (props: {
+    color?: string;
+    fontSize?: number;
+    locked?: boolean;
+  }) => {
+    let changed = false;
+    
+    for (const id of selectedStrokeIdsRef.current) {
+      const s = strokesRef.current.find((st) => st.id === id);
+      if (!s) continue;
+      if (props.color !== undefined && s.color !== props.color) {
+        s.color = props.color;
+        changed = true;
+      }
+      if (props.locked !== undefined && s.locked !== props.locked) {
+        s.locked = props.locked;
+        changed = true;
+      }
+    }
+    
+    for (const id of selectedTextFieldIdsRef.current) {
+      const f = textFieldsRef.current.find((t) => t.id === id);
+      if (!f) continue;
+      if (props.color !== undefined && f.color !== props.color) {
+        f.color = props.color;
+        changed = true;
+      }
+      if (props.fontSize !== undefined && f.fontSize !== props.fontSize) {
+        f.fontSize = props.fontSize;
+        changed = true;
+      }
+      if (props.locked !== undefined && f.locked !== props.locked) {
+        f.locked = props.locked;
+        changed = true;
+      }
+    }
+    
+    if (changed) {
+      pushHistory('Update properties', true);
+      renderAll();
+      renderSelectionOverlay();
+      notifySelectedTextField();
+    }
+  };
+
   const cloneStrokeWithOffset = (s: Stroke, dx: number, dy: number): Stroke => ({
     ...s,
     id: createHistoryId(),
@@ -434,11 +1394,6 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     }
     return null;
   };
-
-  const getSelectionCenter = (b: { minX: number; minY: number; maxX: number; maxY: number }) => ({
-    x: (b.minX + b.maxX) / 2,
-    y: (b.minY + b.maxY) / 2,
-  });
 
   const getRotateHandle = (b: { minX: number; minY: number; maxX: number; maxY: number }) => {
     const c = getSelectionCenter(b);
@@ -483,6 +1438,8 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const layerId = s.layerId || layersRef.current[0]?.id || 'layer-1';
       const layer = layersRef.current.find((l) => l.id === layerId);
       if (layer && (!layer.visible || layer.locked)) continue;
+      // Skip locked individual objects
+      if (s.locked) continue;
       const b = getStrokeBounds(s);
       if (wx < b.minX - tol || wx > b.maxX + tol || wy < b.minY - tol || wy > b.maxY + tol) continue;
       const pts = s.points;
@@ -569,6 +1526,185 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       }
     }
 
+    // Selected image: bounding box + resize handles + rotate handle
+    if (imageSelectedRef.current && selectedImageIdRef.current) {
+      const canvasImage = imagesRef.current.get(selectedImageIdRef.current);
+      if (!canvasImage) return;
+      const placement = canvasImage.placement;
+      const { dx, dy, dw, dh, rotation = 0 } = placement;
+      ctxO.save();
+      
+      // Calculate bounding box accounting for rotation
+      if (rotation !== 0) {
+        const centerX = dx + dw / 2;
+        const centerY = dy + dh / 2;
+        const rad = (rotation * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const corners = [
+          { x: dx - centerX, y: dy - centerY },
+          { x: dx + dw - centerX, y: dy - centerY },
+          { x: dx + dw - centerX, y: dy + dh - centerY },
+          { x: dx - centerX, y: dy + dh - centerY }
+        ];
+        const rotatedCorners = corners.map(c => ({
+          x: c.x * cos - c.y * sin + centerX,
+          y: c.x * sin + c.y * cos + centerY
+        }));
+        const minX = Math.min(...rotatedCorners.map(c => c.x));
+        const maxX = Math.max(...rotatedCorners.map(c => c.x));
+        const minY = Math.min(...rotatedCorners.map(c => c.y));
+        const maxY = Math.max(...rotatedCorners.map(c => c.y));
+        
+        const pad = 6 / z;
+        const x = minX - pad;
+        const y = minY - pad;
+        const w = (maxX - minX) + pad * 2;
+        const h = (maxY - minY) + pad * 2;
+        
+        ctxO.strokeStyle = '#3b82f6';
+        ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
+        ctxO.setLineDash([4 / z, 3 / z]);
+        ctxO.strokeRect(x, y, w, h);
+        ctxO.setLineDash([]);
+        
+        // Draw resize handles at corners
+        const handleSize = 8 / z;
+        ctxO.fillStyle = '#3b82f6';
+        ctxO.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
+        for (const corner of rotatedCorners) {
+          ctxO.beginPath();
+          ctxO.rect(corner.x - handleSize / 2, corner.y - handleSize / 2, handleSize, handleSize);
+          ctxO.fill();
+          ctxO.stroke();
+        }
+        
+        // Rotate handle
+        const rotY = minY - 30 / z;
+        const rotX = (minX + maxX) / 2;
+        ctxO.beginPath();
+        ctxO.moveTo((minX + maxX) / 2, minY);
+        ctxO.lineTo(rotX, rotY);
+        ctxO.stroke();
+        const r = 5.5 / z;
+        ctxO.beginPath();
+        ctxO.arc(rotX, rotY, r, 0, Math.PI * 2);
+        ctxO.fill();
+        ctxO.stroke();
+      } else {
+        const pad = 6 / z;
+        const x = dx - pad;
+        const y = dy - pad;
+        const w = dw + pad * 2;
+        const h = dh + pad * 2;
+        ctxO.strokeStyle = '#3b82f6';
+        ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
+        ctxO.setLineDash([4 / z, 3 / z]);
+        ctxO.strokeRect(x, y, w, h);
+        ctxO.setLineDash([]);
+        
+        // Draw resize handles
+        const handleSize = 8 / z;
+        ctxO.fillStyle = '#3b82f6';
+        ctxO.strokeStyle = 'rgba(0,0,0,0.4)';
+        ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
+        const handles = [
+          { x: dx, y: dy }, // nw
+          { x: dx + dw, y: dy }, // ne
+          { x: dx + dw, y: dy + dh }, // se
+          { x: dx, y: dy + dh }, // sw
+          { x: dx + dw / 2, y: dy }, // n
+          { x: dx + dw, y: dy + dh / 2 }, // e
+          { x: dx + dw / 2, y: dy + dh }, // s
+          { x: dx, y: dy + dh / 2 } // w
+        ];
+        for (const hnd of handles) {
+          ctxO.beginPath();
+          ctxO.rect(hnd.x - handleSize / 2, hnd.y - handleSize / 2, handleSize, handleSize);
+          ctxO.fill();
+          ctxO.stroke();
+        }
+        
+        // Rotate handle
+        const rotY = dy - 30 / z;
+        ctxO.beginPath();
+        ctxO.moveTo(dx + dw / 2, dy);
+        ctxO.lineTo(dx + dw / 2, rotY);
+        ctxO.stroke();
+        const r = 5.5 / z;
+        ctxO.beginPath();
+        ctxO.arc(dx + dw / 2, rotY, r, 0, Math.PI * 2);
+        ctxO.fill();
+        ctxO.stroke();
+      }
+      
+      ctxO.restore();
+    }
+
+    // Selected text fields: show bounding box for all selected text fields
+    if (selectedTextFieldIdsRef.current.size) {
+      const items = getAllSelectedBounds();
+      const textItems = items.filter(item => item.type === 'text');
+      if (textItems.length > 0) {
+        // If we have both strokes and text fields, show combined bounds
+        // Otherwise, show bounds for text fields only
+        let b: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
+        if (selectedStrokeIdsRef.current.size > 0) {
+          // Combined bounds already handled above for strokes
+          // Just show individual text field outlines
+          for (const item of textItems) {
+            const pad = 6 / z;
+            const x = item.bounds.minX - pad;
+            const y = item.bounds.minY - pad;
+            const w = (item.bounds.maxX - item.bounds.minX) + pad * 2;
+            const h = (item.bounds.maxY - item.bounds.minY) + pad * 2;
+            ctxO.save();
+            ctxO.strokeStyle = '#3b82f6';
+            ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
+            ctxO.setLineDash([4 / z, 3 / z]);
+            ctxO.strokeRect(x, y, w, h);
+            ctxO.restore();
+          }
+        } else {
+          // Only text fields selected - show combined bounding box
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const item of textItems) {
+            if (item.bounds.minX < minX) minX = item.bounds.minX;
+            if (item.bounds.minY < minY) minY = item.bounds.minY;
+            if (item.bounds.maxX > maxX) maxX = item.bounds.maxX;
+            if (item.bounds.maxY > maxY) maxY = item.bounds.maxY;
+          }
+          if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)) {
+            b = { minX, minY, maxX, maxY };
+            const pad = 6 / z;
+            const x = b.minX - pad;
+            const y = b.minY - pad;
+            const w = (b.maxX - b.minX) + pad * 2;
+            const h = (b.maxY - b.minY) + pad * 2;
+            ctxO.save();
+            ctxO.strokeStyle = '#3b82f6';
+            ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
+            ctxO.setLineDash([4 / z, 3 / z]);
+            ctxO.strokeRect(x, y, w, h);
+            ctxO.setLineDash([]);
+            // Handles
+            const handleSize = 8 / z;
+            ctxO.fillStyle = '#3b82f6';
+            ctxO.strokeStyle = 'rgba(0,0,0,0.4)';
+            ctxO.lineWidth = Math.max(1 / z, 1 / (dpr * z));
+            for (const hnd of getSelectionHandles(b)) {
+              ctxO.beginPath();
+              ctxO.rect(hnd.x - handleSize / 2, hnd.y - handleSize / 2, handleSize, handleSize);
+              ctxO.fill();
+              ctxO.stroke();
+            }
+            ctxO.restore();
+          }
+        }
+      }
+    }
+
     // Marquee selection rect
     if (marqueeRef.current) {
       const a = marqueeRef.current.start;
@@ -589,9 +1725,10 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   };
 
   const findSelectedTextField = (): TextField | null => {
-    const id = selectedTextFieldRef.current;
-    if (!id) return null;
-    return textFieldsRef.current.find((f) => f.id === id) || null;
+    // Return the first selected text field for backward compatibility
+    const firstId = Array.from(selectedTextFieldIdsRef.current)[0];
+    if (!firstId) return null;
+    return textFieldsRef.current.find((f) => f.id === firstId) || null;
   };
 
   const notifySelectedTextField = () => {
@@ -614,7 +1751,10 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     if (!text) return [];
     const ctx = getMeasureContext();
     if (!ctx) return [text];
-    ctx.font = `${field.fontSize}px sans-serif`;
+    const fontFamily = field.fontFamily || 'sans-serif';
+    const fontWeight = field.fontWeight || 'normal';
+    const fontStyle = field.fontStyle || 'normal';
+    ctx.font = `${fontStyle} ${fontWeight} ${field.fontSize}px ${fontFamily}`;
     const maxWidth = Math.max(4, (widthOverride ?? field.width) - 4);
     const paragraphs = text.split(/\r?\n/);
     const lines: string[] = [];
@@ -902,8 +2042,18 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     input.style.setProperty('top', `${screenY}px`);
     input.style.setProperty('width', `${screenWidth}px`);
     input.style.setProperty('height', `${screenHeight}px`);
+    const fontFamily = field.fontFamily || 'sans-serif';
+    const fontWeight = field.fontWeight || 'normal';
+    const fontStyle = field.fontStyle || 'normal';
+    const textColor = field.textColor || field.color;
+    const textAlign = field.textAlign || 'left';
+    
     input.style.setProperty('font-size', `${field.fontSize * z}px`);
-    input.style.setProperty('color', field.color);
+    input.style.setProperty('font-family', fontFamily);
+    input.style.setProperty('font-weight', fontWeight);
+    input.style.setProperty('font-style', fontStyle);
+    input.style.setProperty('color', textColor);
+    input.style.setProperty('text-align', textAlign);
     input.value = field.text;
   }
 
@@ -1010,10 +2160,24 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     undo: () => undo(),
     redo: () => redo(),
     clear: () => clear(),
-    exportPng: () => exportPng(),
-    exportPngSelection: () => exportPngSelection(),
+    exportPng: (options?: ExportOptions) => exportPng(options),
+    exportPngSelection: (options?: ExportOptions) => exportPngSelection(options),
+    exportSvg: (options?: ExportOptions) => exportSvg(options),
+    exportPdf: (options?: ExportOptions) => exportPdf(options) || Promise.resolve(null),
     saveBoard: () => saveBoard(),
     loadImage: (d) => loadImage(d),
+    addImage: (d) => addImage(d),
+    removeImage: (id) => removeImage(id),
+    getAllImages: () => getAllImages(),
+    getImageState: (id) => getImageState(id),
+    setImageOpacity: (opacity, id) => setImageOpacity(opacity, id),
+    setImageRotation: (rotation, id) => setImageRotation(rotation, id),
+    setImageSize: (width, height, id) => setImageSize(width, height, id),
+    setImagePosition: (x, y, id) => setImagePosition(x, y, id),
+    cropImage: (x, y, width, height, id) => cropImage(x, y, width, height, id),
+    selectImage: (id) => selectImage(id),
+    isImageSelected: () => isImageSelected(),
+    getSelectedImageId: () => getSelectedImageId(),
     setZoom: (delta) => {
       zoomRef.current = Math.min(3, Math.max(0.25, zoomRef.current + delta));
       applyTransform();
@@ -1021,6 +2185,48 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       updateCursor();
     },
     resetView: () => { zoomRef.current = 1; panRef.current = {x:0,y:0}; applyTransform(); },
+    zoomToFitSelection: () => {
+      const items = getAllSelectedBounds();
+      if (items.length === 0) {
+        // Check if there's a selected text field
+        const selectedField = findSelectedTextField();
+        if (!selectedField) return;
+        const bounds = {
+          minX: selectedField.x,
+          minY: selectedField.y,
+          maxX: selectedField.x + selectedField.width,
+          maxY: selectedField.y + selectedField.height
+        };
+        zoomToBounds(bounds);
+        return;
+      }
+      // Get combined bounds of all selected items
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const item of items) {
+        if (item.bounds.minX < minX) minX = item.bounds.minX;
+        if (item.bounds.minY < minY) minY = item.bounds.minY;
+        if (item.bounds.maxX > maxX) maxX = item.bounds.maxX;
+        if (item.bounds.maxY > maxY) maxY = item.bounds.maxY;
+      }
+      if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)) {
+        zoomToBounds({ minX, minY, maxX, maxY });
+      }
+    },
+    zoomToFitAll: () => {
+      const bounds = getAllContentBounds();
+      if (bounds) {
+        zoomToBounds(bounds);
+      }
+    },
+    setCanvasSize: (width, height) => {
+      // Canvas size presets - this sets a visual guide/boundary
+      // For infinite canvas, we don't actually restrict drawing, but show guides
+      canvasSizeRef.current = { width, height };
+      renderAll();
+    },
+    getCanvasSize: () => {
+      return canvasSizeRef.current;
+    },
     getStrokesJSON: () => { 
       try { 
         return JSON.stringify({
@@ -1056,7 +2262,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       }
       ensureLayerIntegrity();
       editingTextFieldRef.current = null;
-      selectedTextFieldRef.current = null;
+      selectedTextFieldIdsRef.current.clear();
       notifySelectedTextField();
       renderAll();
       updateTextInputPosition();
@@ -1091,6 +2297,43 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       return field ? cloneTextField(field) : null;
     },
     resizeSelectedTextField: (size, options) => resizeSelectedField(size, options),
+    updateTextFieldFormatting: (formatting) => {
+      const field = findSelectedTextField();
+      if (!field) return;
+      let changed = false;
+      if (typeof formatting.fontSize === 'number' && formatting.fontSize > 0) {
+        field.fontSize = formatting.fontSize;
+        changed = true;
+      }
+      if (typeof formatting.fontFamily === 'string') {
+        field.fontFamily = formatting.fontFamily;
+        changed = true;
+      }
+      if (typeof formatting.fontWeight === 'string') {
+        field.fontWeight = formatting.fontWeight;
+        changed = true;
+      }
+      if (typeof formatting.fontStyle === 'string') {
+        field.fontStyle = formatting.fontStyle;
+        changed = true;
+      }
+      if (formatting.textAlign === 'left' || formatting.textAlign === 'center' || formatting.textAlign === 'right') {
+        field.textAlign = formatting.textAlign;
+        changed = true;
+      }
+      if (typeof formatting.textColor === 'string') {
+        field.textColor = formatting.textColor;
+        changed = true;
+      }
+      if (changed) {
+        if (autoResizeFieldHeight(field)) {
+          // Height may have changed due to font size change
+        }
+        notifySelectedTextField();
+        renderAll();
+        updateTextInputPosition();
+      }
+    },
     getLayers: () => {
       ensureLayerIntegrity();
       return [...layersRef.current];
@@ -1157,15 +2400,33 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       ensureLayerIntegrity();
       if (!layersRef.current.some((l) => l.id === layerId)) return;
       if (isLayerLocked(layerId)) return;
-      const id = selectedTextFieldRef.current;
-      if (!id) return;
-      const f = textFieldsRef.current.find((t) => t.id === id);
-      if (!f) return;
-      f.layerId = layerId;
-      pushHistory('Move text layer', true);
-      renderAll();
-      notifySelectedTextField();
+      // Move all selected text fields to the layer
+      for (const id of selectedTextFieldIdsRef.current) {
+        const f = textFieldsRef.current.find((t) => t.id === id);
+        if (f) f.layerId = layerId;
+      }
+      if (selectedTextFieldIdsRef.current.size > 0) {
+        pushHistory('Move text layer', true);
+        renderAll();
+        notifySelectedTextField();
+      }
     },
+    alignSelected: (alignment) => alignSelected(alignment),
+    distributeSelected: (direction) => distributeSelected(direction),
+    autoArrange: () => autoArrange(),
+    convertShapesToPerfect: (shapes) => convertShapesToPerfect(shapes),
+    getSelectedStrokes: () => getSelectedStrokes(),
+    getAllStrokes: () => getAllStrokes(),
+    groupSelected: () => groupSelected(),
+    ungroupSelected: () => ungroupSelected(),
+    lockSelected: () => lockSelected(),
+    unlockSelected: () => unlockSelected(),
+    bringToFront: () => bringToFront(),
+    sendToBack: () => sendToBack(),
+    flipHorizontal: () => flipHorizontal(),
+    flipVertical: () => flipVertical(),
+    getSelectedObjectsProperties: () => getSelectedObjectsProperties(),
+    updateSelectedObjectsProperties: (props) => updateSelectedObjectsProperties(props),
   }));
 
   useEffect(() => {
@@ -1240,12 +2501,17 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       text: '',
       color: colorRef.current,
       fontSize: fontSize,
+      fontFamily: 'sans-serif',
+      fontWeight: 'normal',
+      fontStyle: 'normal',
+      textAlign: 'left',
+      textColor: colorRef.current,
       layerId: activeLayerIdRef.current,
     };
     
     textFieldsRef.current.push(newField);
     editingTextFieldRef.current = newField.id;
-    selectedTextFieldRef.current = newField.id;
+    selectedTextFieldIdsRef.current = new Set([newField.id]);
     notifySelectedTextField();
     renderAll();
     updateTextInputPosition();
@@ -1324,25 +2590,150 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         return;
       }
 
-    // Select tool: select + move strokes/shapes/text, or marquee select.
-    if (brushRef.current === 'select') {
+      // Select tool: select + move strokes/shapes/text, or marquee select.
+      if (brushRef.current === 'select') {
       cancelHold(e.pointerId);
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       const { x: wx, y: wy } = getWorldFromLocal(lx, ly);
+
+      // Check if clicking on any image (check from top to bottom, last image is on top)
+      let clickedImage: { id: string; placement: ImagePlacement } | null = null;
+      const imagesArray = Array.from(imagesRef.current.entries()).reverse(); // Reverse to check top images first
+      for (const [imageId, canvasImage] of imagesArray) {
+        const placement = canvasImage.placement;
+        const { dx, dy, dw, dh, rotation = 0 } = placement;
+        
+        // Check if point is within image bounds (accounting for rotation)
+        let isInside = false;
+        if (rotation === 0) {
+          isInside = wx >= dx && wx <= dx + dw && wy >= dy && wy <= dy + dh;
+        } else {
+          // Transform point to image-local coordinates
+          const centerX = dx + dw / 2;
+          const centerY = dy + dh / 2;
+          const rad = (-rotation * Math.PI) / 180;
+          const cos = Math.cos(rad);
+          const sin = Math.sin(rad);
+          const localX = (wx - centerX) * cos - (wy - centerY) * sin;
+          const localY = (wx - centerX) * sin + (wy - centerY) * cos;
+          isInside = localX >= -dw/2 && localX <= dw/2 && localY >= -dh/2 && localY <= dh/2;
+        }
+        
+        if (isInside) {
+          clickedImage = { id: imageId, placement };
+          break;
+        }
+      }
+      
+      if (clickedImage) {
+        const placement = clickedImage.placement;
+        const { dx, dy, dw, dh, rotation = 0 } = placement;
+        selectedImageIdRef.current = clickedImage.id;
+        // Check if clicking on resize handle or rotate handle
+        const handleSize = 8 / (zoomRef.current || 1);
+        const handles = [
+          { x: dx, y: dy, type: 'nw' },
+          { x: dx + dw, y: dy, type: 'ne' },
+          { x: dx + dw, y: dy + dh, type: 'se' },
+          { x: dx, y: dy + dh, type: 'sw' },
+          { x: dx + dw / 2, y: dy, type: 'n' },
+          { x: dx + dw, y: dy + dh / 2, type: 'e' },
+          { x: dx + dw / 2, y: dy + dh, type: 's' },
+          { x: dx, y: dy + dh / 2, type: 'w' }
+        ];
+        
+        let clickedHandle: { x: number; y: number; type: string } | null = null;
+        for (const handle of handles) {
+          const dist = Math.hypot(wx - handle.x, wy - handle.y);
+          if (dist <= handleSize) {
+            clickedHandle = handle;
+            break;
+          }
+        }
+        
+        // Check rotate handle
+        const rotY = dy - 30 / (zoomRef.current || 1);
+        const rotX = dx + dw / 2;
+        const rotDist = Math.hypot(wx - rotX, wy - rotY);
+        const isRotateHandle = rotDist <= 8 / (zoomRef.current || 1);
+        
+        if (clickedHandle) {
+          imageSelectedRef.current = true;
+          imageManipulationRef.current = {
+            isResizing: true,
+            isRotating: false,
+            isMoving: false,
+            isCropping: false,
+            resizeHandle: clickedHandle.type as any,
+            startPos: { x: wx, y: wy }
+          };
+          renderSelectionOverlay();
+          return;
+        } else if (isRotateHandle) {
+          imageSelectedRef.current = true;
+          const centerX = dx + dw / 2;
+          const centerY = dy + dh / 2;
+          const startAngle = Math.atan2(wy - centerY, wx - centerX);
+          const currentRotation = placement.rotation || 0;
+          imageManipulationRef.current = {
+            isResizing: false,
+            isRotating: true,
+            isMoving: false,
+            isCropping: false,
+            startPos: { x: wx, y: wy },
+            startAngle: startAngle,
+            startRotation: currentRotation
+          };
+          renderSelectionOverlay();
+          return;
+        } else {
+          // Clicked on image, select it and prepare to move
+          imageSelectedRef.current = true;
+          imageManipulationRef.current = {
+            isResizing: false,
+            isRotating: false,
+            isMoving: true,
+            isCropping: false,
+            startPos: { x: wx, y: wy }
+          };
+          selectedStrokeIdsRef.current.clear();
+          selectedTextFieldIdsRef.current.clear();
+          notifySelectedTextField();
+          renderSelectionOverlay();
+          return;
+        }
+      } else {
+        // Clicked outside all images, deselect
+        imageSelectedRef.current = false;
+        selectedImageIdRef.current = null;
+        imageManipulationRef.current = null;
+      }
 
       // Prefer text fields first (existing logic for drag handles etc).
       const hitText = getTextFieldAtPoint(lx, ly);
       // If hovering a resize handle on a text field, allow resizing in Select mode too.
       if (hitText && hitText.field && hitText.handle) {
         if (isLayerLocked(hitText.field.layerId)) {
-          selectedTextFieldRef.current = hitText.field.id;
+          if (shiftPressedRef.current) {
+            if (selectedTextFieldIdsRef.current.has(hitText.field.id)) selectedTextFieldIdsRef.current.delete(hitText.field.id);
+            else selectedTextFieldIdsRef.current.add(hitText.field.id);
+          } else {
+            selectedTextFieldIdsRef.current = new Set([hitText.field.id]);
+          }
+          selectedStrokeIdsRef.current.clear();
           notifySelectedTextField();
           renderAll();
           renderSelectionOverlay();
           return;
         }
         resizingTextFieldRef.current = { id: hitText.field.id, handle: hitText.handle };
-        selectedTextFieldRef.current = hitText.field.id;
+        if (shiftPressedRef.current) {
+          if (selectedTextFieldIdsRef.current.has(hitText.field.id)) selectedTextFieldIdsRef.current.delete(hitText.field.id);
+          else selectedTextFieldIdsRef.current.add(hitText.field.id);
+        } else {
+          selectedTextFieldIdsRef.current = new Set([hitText.field.id]);
+        }
+        selectedStrokeIdsRef.current.clear();
         notifySelectedTextField();
         renderAll();
         return;
@@ -1350,18 +2741,34 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       if (hitText && hitText.field && !hitText.handle) {
         // Locked layer: allow select but don't drag/edit.
         if (isLayerLocked(hitText.field.layerId)) {
-          selectedTextFieldRef.current = hitText.field.id;
-          notifySelectedTextField();
+          if (shiftPressedRef.current) {
+            if (selectedTextFieldIdsRef.current.has(hitText.field.id)) selectedTextFieldIdsRef.current.delete(hitText.field.id);
+            else selectedTextFieldIdsRef.current.add(hitText.field.id);
+          } else {
+            selectedTextFieldIdsRef.current = new Set([hitText.field.id]);
+          }
           selectedStrokeIdsRef.current.clear();
+          notifySelectedTextField();
           renderAll();
           renderSelectionOverlay();
           return;
         }
-        selectedTextFieldRef.current = hitText.field.id;
-        notifySelectedTextField();
-        draggingTextFieldRef.current = hitText.field.id;
-        textFieldDragOffsetRef.current = { x: wx - hitText.field.x, y: wy - hitText.field.y };
+        // Shift-click: toggle selection. Regular click: replace selection.
+        if (shiftPressedRef.current) {
+          if (selectedTextFieldIdsRef.current.has(hitText.field.id)) selectedTextFieldIdsRef.current.delete(hitText.field.id);
+          else selectedTextFieldIdsRef.current.add(hitText.field.id);
+        } else {
+          selectedTextFieldIdsRef.current = new Set([hitText.field.id]);
+        }
         selectedStrokeIdsRef.current.clear();
+        notifySelectedTextField();
+        // Only start dragging if this field is still selected after toggle and not locked
+        if (selectedTextFieldIdsRef.current.has(hitText.field.id) && !hitText.field.locked) {
+          draggingTextFieldRef.current = hitText.field.id;
+          textFieldDragOffsetRef.current = { x: wx - hitText.field.x, y: wy - hitText.field.y };
+        } else {
+          draggingTextFieldRef.current = null;
+        }
         renderAll();
         renderSelectionOverlay();
         return;
@@ -1376,9 +2783,10 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
             const originals = new Map<string, Point[]>();
             for (const id of selectedStrokeIdsRef.current) {
               const s = strokesRef.current.find((st) => st.id === id);
-              if (!s) continue;
+              if (!s || s.locked) continue; // Skip locked objects
               originals.set(id, s.points.map((p) => ({ ...p })));
             }
+            if (originals.size === 0) return; // No unlocked objects to rotate
             const c = getSelectionCenter(b);
             rotatingStrokesRef.current = {
               center: c,
@@ -1394,9 +2802,10 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
             const originals = new Map<string, Point[]>();
             for (const id of selectedStrokeIdsRef.current) {
               const s = strokesRef.current.find((st) => st.id === id);
-              if (!s) continue;
+              if (!s || s.locked) continue; // Skip locked objects
               originals.set(id, s.points.map((p) => ({ ...p })));
             }
+            if (originals.size === 0) return; // No unlocked objects to resize
             const handles = {
               nw: { x: b.minX, y: b.minY },
               ne: { x: b.maxX, y: b.minY },
@@ -1431,17 +2840,19 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         } else {
           selectedStrokeIdsRef.current = new Set([hitStroke.id]);
         }
-        selectedTextFieldRef.current = null;
+        selectedTextFieldIdsRef.current.clear();
         notifySelectedTextField();
 
-        // Start dragging selected strokes
+        // Start dragging selected strokes (skip locked ones)
         const originals = new Map<string, Point[]>();
         for (const id of selectedStrokeIdsRef.current) {
           const s = strokesRef.current.find((st) => st.id === id);
-          if (!s) continue;
+          if (!s || s.locked) continue; // Skip locked objects
           originals.set(id, s.points.map((p) => ({ ...p })));
         }
-        draggingStrokesRef.current = { start: { x: wx, y: wy }, originals };
+        if (originals.size > 0) {
+          draggingStrokesRef.current = { start: { x: wx, y: wy }, originals };
+        }
         renderAll();
         renderSelectionOverlay();
         return;
@@ -1450,14 +2861,16 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       // Empty area: start marquee selection (unless shift, then keep current selection).
       if (!shiftPressedRef.current) {
         selectedStrokeIdsRef.current.clear();
-        selectedTextFieldRef.current = null;
+        selectedTextFieldIdsRef.current.clear();
+        imageSelectedRef.current = false;
+        imageManipulationRef.current = null;
         notifySelectedTextField();
       }
       marqueeRef.current = { start: { x: wx, y: wy }, current: { x: wx, y: wy } };
       renderSelectionOverlay();
       return;
     }
-      
+
       // Handle text tool
       if (brushRef.current === 'text') {
         cancelHold(e.pointerId);
@@ -1486,9 +2899,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
                   textInputRef.current.style.display = 'none';
                 }
               }
-              if (selectedTextFieldRef.current === field.id) {
-                selectedTextFieldRef.current = null;
-              }
+              selectedTextFieldIdsRef.current.delete(field.id);
               notifySelectedTextField();
               renderAll();
               updateTextInputPosition();
@@ -1501,19 +2912,21 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         // Click on resize handle: start resizing
         if (hit && hit.handle) {
           if (isLayerLocked(hit.field.layerId)) {
-            selectedTextFieldRef.current = hit.field.id;
+            selectedTextFieldIdsRef.current = new Set([hit.field.id]);
             notifySelectedTextField();
             renderAll();
             return;
           }
-          resizingTextFieldRef.current = { id: hit.field.id, handle: hit.handle };
-          selectedTextFieldRef.current = hit.field.id;
+          if (!hit.field.locked) {
+            resizingTextFieldRef.current = { id: hit.field.id, handle: hit.handle };
+            selectedTextFieldIdsRef.current = new Set([hit.field.id]);
+          }
           notifySelectedTextField();
           renderAll();
           return;
         } else if (hit && hit.field) {
           if (isLayerLocked(hit.field.layerId)) {
-            selectedTextFieldRef.current = hit.field.id;
+            selectedTextFieldIdsRef.current = new Set([hit.field.id]);
             editingTextFieldRef.current = null;
             notifySelectedTextField();
             renderAll();
@@ -1528,7 +2941,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
             }
           }
           
-          selectedTextFieldRef.current = hit.field.id;
+          selectedTextFieldIdsRef.current = new Set([hit.field.id]);
           editingTextFieldRef.current = hit.field.id;
           notifySelectedTextField();
           updateTextInputPosition();
@@ -1553,7 +2966,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
               pushHistory();
             }
           }
-          selectedTextFieldRef.current = null;
+          selectedTextFieldIdsRef.current.clear();
           editingTextFieldRef.current = null;
           notifySelectedTextField();
           if (textInputRef.current) {
@@ -1563,73 +2976,71 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
           return;
         }
       }
-      
+
       // Check if clicking on existing text field to drag it (when not using text tool)
       const currentBrush = brushRef.current;
       // @ts-expect-error - TypeScript incorrectly narrows type after early return, but 'text' is valid BrushKind
-      if (currentBrush === 'text') {
-        // Already handled text tool above
-        } else {
-          cancelHold(e.pointerId);
-          const hit = getTextFieldAtPoint(lx, ly);
-          if (hit && hit.field && !hit.handle) {
-            const field = hit.field;
-            if (isLayerLocked(field.layerId)) {
-              selectedTextFieldRef.current = field.id;
-              notifySelectedTextField();
-              renderAll();
-              return;
-            }
-            const z = zoomRef.current || 1;
-            const pan = panRef.current;
-            const worldX = (lx - pan.x) / z;
-            const worldY = (ly - pan.y) / z;
-            
-            // Check if clicking on delete button
-            const deleteBtnSize = 20 / z;
-            const deleteBtnX = field.x + field.width - deleteBtnSize - 2;
-            const deleteBtnY = field.y - deleteBtnSize - 2;
-            
-            if (worldX >= deleteBtnX && worldX <= deleteBtnX + deleteBtnSize &&
-                worldY >= deleteBtnY && worldY <= deleteBtnY + deleteBtnSize) {
-              // Delete the text field
-              const index = textFieldsRef.current.findIndex(f => f.id === field.id);
-              if (index !== -1) {
-                textFieldsRef.current.splice(index, 1);
-                if (editingTextFieldRef.current === field.id) {
-                  editingTextFieldRef.current = null;
-                  if (textInputRef.current) {
-                    textInputRef.current.style.display = 'none';
-                  }
-                }
-                if (selectedTextFieldRef.current === field.id) {
-                  selectedTextFieldRef.current = null;
-                }
-                notifySelectedTextField();
-                renderAll();
-                updateTextInputPosition();
-                pushHistory();
-              }
-              return;
-            }
-            
-            // Select and start dragging
-            selectedTextFieldRef.current = field.id;
-            draggingTextFieldRef.current = field.id;
-            textFieldDragOffsetRef.current = { x: worldX - field.x, y: worldY - field.y };
+      if (currentBrush !== 'text') {
+        cancelHold(e.pointerId);
+        const hit = getTextFieldAtPoint(lx, ly);
+        if (hit && hit.field && !hit.handle) {
+          const field = hit.field;
+          if (isLayerLocked(field.layerId)) {
+            selectedTextFieldIdsRef.current = new Set([field.id]);
             notifySelectedTextField();
             renderAll();
             return;
           }
+          const z = zoomRef.current || 1;
+          const pan = panRef.current;
+          const worldX = (lx - pan.x) / z;
+          const worldY = (ly - pan.y) / z;
+          
+          // Check if clicking on delete button
+          const deleteBtnSize = 20 / z;
+          const deleteBtnX = field.x + field.width - deleteBtnSize - 2;
+          const deleteBtnY = field.y - deleteBtnSize - 2;
+          
+          if (worldX >= deleteBtnX && worldX <= deleteBtnX + deleteBtnSize &&
+              worldY >= deleteBtnY && worldY <= deleteBtnY + deleteBtnSize) {
+            // Delete the text field
+            const index = textFieldsRef.current.findIndex(f => f.id === field.id);
+            if (index !== -1) {
+              textFieldsRef.current.splice(index, 1);
+              if (editingTextFieldRef.current === field.id) {
+                editingTextFieldRef.current = null;
+                if (textInputRef.current) {
+                  textInputRef.current.style.display = 'none';
+                }
+              }
+              selectedTextFieldIdsRef.current.delete(field.id);
+              notifySelectedTextField();
+              renderAll();
+              updateTextInputPosition();
+              pushHistory();
+            }
+            return;
+          }
+          
+          // Select and start dragging (only if not locked)
+          selectedTextFieldIdsRef.current = new Set([field.id]);
+          if (!field.locked) {
+            draggingTextFieldRef.current = field.id;
+            textFieldDragOffsetRef.current = { x: worldX - field.x, y: worldY - field.y };
+          }
+          notifySelectedTextField();
+          renderAll();
+          return;
         }
-      
-      // Deselect text field when clicking on empty space with other tools
-      if (selectedTextFieldRef.current) {
-        selectedTextFieldRef.current = null;
+      }
+
+      // Deselect text fields when clicking on empty space with other tools
+      if (selectedTextFieldIdsRef.current.size > 0) {
+        selectedTextFieldIdsRef.current.clear();
         notifySelectedTextField();
         renderAll();
       }
-      
+
       // Begin drawing:
       // - mouse/pen: start immediately (no perceived delay)
       // - touch: use hold-to-draw gating to avoid interfering with page scrolling
@@ -1741,6 +3152,108 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
             renderAll();
           }
           return;
+        }
+        // Handle image manipulation
+        if (imageManipulationRef.current && selectedImageIdRef.current) {
+          const { x: wx, y: wy } = getWorldFromLocal(lx, ly);
+          const manip = imageManipulationRef.current;
+          const canvasImage = imagesRef.current.get(selectedImageIdRef.current);
+          if (!canvasImage) return;
+          const placement = canvasImage.placement;
+          
+          if (manip.isRotating && manip.startAngle !== undefined && manip.startRotation !== undefined) {
+            const centerX = placement.dx + placement.dw / 2;
+            const centerY = placement.dy + placement.dh / 2;
+            const currentAngle = Math.atan2(wy - centerY, wx - centerX);
+            let delta = ((currentAngle - manip.startAngle) * 180) / Math.PI;
+            if (shiftPressedRef.current) {
+              delta = Math.round(delta / 15) * 15; // Snap to 15° increments
+            }
+            placement.rotation = manip.startRotation + delta;
+            refreshBackground();
+            renderSelectionOverlay();
+            return;
+          }
+          
+          if (manip.isResizing && manip.resizeHandle && manip.startPos) {
+            const startX = manip.startPos.x;
+            const startY = manip.startPos.y;
+            const dx = wx - startX;
+            const dy = wy - startY;
+            const aspectRatio = placement.dw / placement.dh;
+            
+            let newDw = placement.dw;
+            let newDh = placement.dh;
+            let newDx = placement.dx;
+            let newDy = placement.dy;
+            
+            switch (manip.resizeHandle) {
+              case 'nw':
+                newDw = placement.dw - dx;
+                newDh = shiftPressedRef.current ? newDw / aspectRatio : placement.dh - dy;
+                newDx = placement.dx + dx;
+                newDy = placement.dy + (placement.dh - newDh);
+                break;
+              case 'ne':
+                newDw = placement.dw + dx;
+                newDh = shiftPressedRef.current ? newDw / aspectRatio : placement.dh - dy;
+                newDy = placement.dy + (placement.dh - newDh);
+                break;
+              case 'sw':
+                newDw = placement.dw - dx;
+                newDh = shiftPressedRef.current ? newDw / aspectRatio : placement.dh + dy;
+                newDx = placement.dx + dx;
+                break;
+              case 'se':
+                newDw = placement.dw + dx;
+                newDh = shiftPressedRef.current ? newDw / aspectRatio : placement.dh + dy;
+                break;
+              case 'n':
+                newDh = placement.dh - dy;
+                newDw = shiftPressedRef.current ? newDh * aspectRatio : placement.dw;
+                newDy = placement.dy + dy;
+                newDx = placement.dx + (placement.dw - newDw) / 2;
+                break;
+              case 's':
+                newDh = placement.dh + dy;
+                newDw = shiftPressedRef.current ? newDh * aspectRatio : placement.dw;
+                newDx = placement.dx + (placement.dw - newDw) / 2;
+                break;
+              case 'e':
+                newDw = placement.dw + dx;
+                newDh = shiftPressedRef.current ? newDw / aspectRatio : placement.dh;
+                newDy = placement.dy + (placement.dh - newDh) / 2;
+                break;
+              case 'w':
+                newDw = placement.dw - dx;
+                newDh = shiftPressedRef.current ? newDw / aspectRatio : placement.dh;
+                newDx = placement.dx + dx;
+                newDy = placement.dy + (placement.dh - newDh) / 2;
+                break;
+            }
+            
+            if (newDw > 10 && newDh > 10) {
+              placement.dw = newDw;
+              placement.dh = newDh;
+              placement.dx = newDx;
+              placement.dy = newDy;
+              manip.startPos = { x: wx, y: wy };
+              refreshBackground();
+              renderSelectionOverlay();
+            }
+            return;
+          }
+          
+          if (manip.isMoving && manip.startPos) {
+            const dx = wx - manip.startPos.x;
+            const dy = wy - manip.startPos.y;
+            placement.dx += dx;
+            placement.dy += dy;
+            manip.startPos = { x: wx, y: wy };
+            refreshBackground();
+            renderSelectionOverlay();
+            return;
+          }
         }
       }
       
@@ -1960,6 +3473,11 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       }
     };
     const onUp = (e: PointerEvent) => {
+      // Commit image manipulation if active
+      if (imageManipulationRef.current && (imageManipulationRef.current.isResizing || imageManipulationRef.current.isRotating || imageManipulationRef.current.isMoving)) {
+        pushHistory();
+        imageManipulationRef.current = null;
+      }
       pointersRef.current.delete(e.pointerId);
       if (pointersRef.current.size < 2) pinchStartRef.current = null;
       
@@ -2037,17 +3555,27 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
         const x1 = Math.max(a.x, c.x);
         const y1 = Math.max(a.y, c.y);
         ensureLayerIntegrity();
-        const picked = new Set<string>();
+        const pickedStrokes = new Set<string>();
+        const pickedTextFields = new Set<string>();
+        // Pick strokes
         for (const s of strokesRef.current) {
           const b = getStrokeBounds(s);
           const intersects = !(b.maxX < x0 || b.minX > x1 || b.maxY < y0 || b.minY > y1);
-          if (intersects) picked.add(s.id);
+          if (intersects) pickedStrokes.add(s.id);
+        }
+        // Pick text fields
+        for (const f of textFieldsRef.current) {
+          const intersects = !(f.x + f.width < x0 || f.x > x1 || f.y + f.height < y0 || f.y > y1);
+          if (intersects) pickedTextFields.add(f.id);
         }
         if (shiftPressedRef.current) {
-          for (const id of picked) selectedStrokeIdsRef.current.add(id);
+          for (const id of pickedStrokes) selectedStrokeIdsRef.current.add(id);
+          for (const id of pickedTextFields) selectedTextFieldIdsRef.current.add(id);
         } else {
-          selectedStrokeIdsRef.current = picked;
+          selectedStrokeIdsRef.current = pickedStrokes;
+          selectedTextFieldIdsRef.current = pickedTextFields;
         }
+        notifySelectedTextField();
         renderAll();
         renderSelectionOverlay();
         return;
@@ -2135,11 +3663,20 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
           const strokes = ids.map((id) => strokesRef.current.find((s) => s.id === id)).filter(Boolean) as Stroke[];
           clip.strokes = strokes.map((s) => ({ ...s, points: s.points.map((p) => ({ ...p })) }));
           clip.bounds = getSelectionBounds(selectedStrokeIdsRef.current) || undefined;
-        } else if (selectedTextFieldRef.current) {
-          const f = textFieldsRef.current.find((t) => t.id === selectedTextFieldRef.current);
-          if (f) {
-            clip.textFields = [{ ...f }];
-            clip.bounds = { minX: f.x, minY: f.y, maxX: f.x + f.width, maxY: f.y + f.height };
+        } else if (selectedTextFieldIdsRef.current.size) {
+          const ids = Array.from(selectedTextFieldIdsRef.current);
+          const fields = ids.map((id) => textFieldsRef.current.find((t) => t.id === id)).filter(Boolean) as TextField[];
+          if (fields.length > 0) {
+            clip.textFields = fields.map((f) => ({ ...f }));
+            // Calculate combined bounds
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const f of fields) {
+              if (f.x < minX) minX = f.x;
+              if (f.y < minY) minY = f.y;
+              if (f.x + f.width > maxX) maxX = f.x + f.width;
+              if (f.y + f.height > maxY) maxY = f.y + f.height;
+            }
+            clip.bounds = { minX, minY, maxX, maxY };
           }
         }
         clipboardRef.current = (clip.strokes?.length || clip.textFields?.length) ? clip : null;
@@ -2161,7 +3698,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
             newIds.add(ns.id);
           }
           selectedStrokeIdsRef.current = newIds;
-          selectedTextFieldRef.current = null;
+          selectedTextFieldIdsRef.current.clear();
           notifySelectedTextField();
           renderAll();
           renderSelectionOverlay();
@@ -2169,10 +3706,14 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
           return;
         }
         if (clip.textFields?.length) {
-          const base = clip.textFields[0];
-          const nf = cloneTextFieldWithOffset({ ...base, layerId: activeLayerIdRef.current }, dx, dy);
-          textFieldsRef.current.push(nf);
-          selectedTextFieldRef.current = nf.id;
+          const newIds = new Set<string>();
+          for (const base of clip.textFields) {
+            const nf = cloneTextFieldWithOffset({ ...base, layerId: activeLayerIdRef.current }, dx, dy);
+            textFieldsRef.current.push(nf);
+            newIds.add(nf.id);
+          }
+          selectedTextFieldIdsRef.current = newIds;
+          selectedStrokeIdsRef.current.clear();
           notifySelectedTextField();
           renderAll();
           updateTextInputPosition();
@@ -2196,47 +3737,136 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
             newIds.add(ns.id);
           }
           selectedStrokeIdsRef.current = newIds;
-          selectedTextFieldRef.current = null;
+          selectedTextFieldIdsRef.current.clear();
           notifySelectedTextField();
           renderAll();
           renderSelectionOverlay();
           pushHistory('Duplicate', true);
           return;
         }
-        if (selectedTextFieldRef.current) {
-          const f = textFieldsRef.current.find((t) => t.id === selectedTextFieldRef.current);
-          if (!f) return;
-          const nf = cloneTextFieldWithOffset({ ...f, layerId: activeLayerIdRef.current }, dx, dy);
-          textFieldsRef.current.push(nf);
-          selectedTextFieldRef.current = nf.id;
+        if (selectedTextFieldIdsRef.current.size) {
+          const ids = Array.from(selectedTextFieldIdsRef.current);
+          const fields = ids.map((id) => textFieldsRef.current.find((t) => t.id === id)).filter(Boolean) as TextField[];
+          const newIds = new Set<string>();
+          for (const f of fields) {
+            const nf = cloneTextFieldWithOffset({ ...f, layerId: activeLayerIdRef.current }, dx, dy);
+            textFieldsRef.current.push(nf);
+            newIds.add(nf.id);
+          }
+          selectedTextFieldIdsRef.current = newIds;
+          selectedStrokeIdsRef.current.clear();
           notifySelectedTextField();
           renderAll();
           updateTextInputPosition();
           pushHistory('Duplicate', true);
         }
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTextFieldRef.current) {
-        // Delete selected text field
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTextFieldIdsRef.current.size) {
+        // Delete selected text fields
         e.preventDefault();
-        const index = textFieldsRef.current.findIndex(f => f.id === selectedTextFieldRef.current);
-        if (index !== -1) {
-          textFieldsRef.current.splice(index, 1);
-          if (editingTextFieldRef.current === selectedTextFieldRef.current) {
-            editingTextFieldRef.current = null;
-            if (textInputRef.current) {
-              textInputRef.current.style.display = 'none';
+        for (const id of selectedTextFieldIdsRef.current) {
+          const index = textFieldsRef.current.findIndex(f => f.id === id);
+          if (index !== -1) {
+            textFieldsRef.current.splice(index, 1);
+            if (editingTextFieldRef.current === id) {
+              editingTextFieldRef.current = null;
+              if (textInputRef.current) {
+                textInputRef.current.style.display = 'none';
+              }
             }
           }
-          selectedTextFieldRef.current = null;
-          notifySelectedTextField();
-          renderAll();
-          updateTextInputPosition();
-          pushHistory();
         }
-      } else if (e.key === 'Escape' && selectedTextFieldRef.current) {
-        // Deselect text field
-        selectedTextFieldRef.current = null;
+        selectedTextFieldIdsRef.current.clear();
         notifySelectedTextField();
         renderAll();
+        updateTextInputPosition();
+        pushHistory();
+      } else if (e.key === 'Escape' && selectedTextFieldIdsRef.current.size) {
+        // Deselect text fields
+        selectedTextFieldIdsRef.current.clear();
+        notifySelectedTextField();
+        renderAll();
+      } else if (isMod && keyLower === 'a') {
+        // Select All (Ctrl/Cmd+A)
+        e.preventDefault();
+        selectedStrokeIdsRef.current = new Set(strokesRef.current.map(s => s.id));
+        selectedTextFieldIdsRef.current = new Set(textFieldsRef.current.map(f => f.id));
+        notifySelectedTextField();
+        renderAll();
+        renderSelectionOverlay();
+      } else if (isMod && keyLower === 'i') {
+        // Invert Selection (Ctrl/Cmd+I)
+        e.preventDefault();
+        const allStrokeIds = new Set(strokesRef.current.map(s => s.id));
+        const allTextFieldIds = new Set(textFieldsRef.current.map(f => f.id));
+        // Invert strokes
+        const invertedStrokes = new Set<string>();
+        for (const id of allStrokeIds) {
+          if (!selectedStrokeIdsRef.current.has(id)) {
+            invertedStrokes.add(id);
+          }
+        }
+        selectedStrokeIdsRef.current = invertedStrokes;
+        // Invert text fields
+        const invertedTextFields = new Set<string>();
+        for (const id of allTextFieldIds) {
+          if (!selectedTextFieldIdsRef.current.has(id)) {
+            invertedTextFields.add(id);
+          }
+        }
+        selectedTextFieldIdsRef.current = invertedTextFields;
+        notifySelectedTextField();
+        renderAll();
+        renderSelectionOverlay();
+      } else if (isMod && keyLower === 'g') {
+        // Group Selected (Ctrl/Cmd+G)
+        e.preventDefault();
+        if (selectedStrokeIdsRef.current.size + selectedTextFieldIdsRef.current.size < 2) return;
+        const groupId = createHistoryId();
+        groupsRef.current.set(groupId, {
+          strokeIds: new Set(selectedStrokeIdsRef.current),
+          textFieldIds: new Set(selectedTextFieldIdsRef.current)
+        });
+        // Associate items with group
+        for (const id of selectedStrokeIdsRef.current) {
+          strokeGroupIdRef.current.set(id, groupId);
+        }
+        for (const id of selectedTextFieldIdsRef.current) {
+          textFieldGroupIdRef.current.set(id, groupId);
+        }
+        pushHistory('Group', true);
+        renderAll();
+        renderSelectionOverlay();
+      } else if (isMod && keyLower === 'u') {
+        // Ungroup Selected (Ctrl/Cmd+U)
+        e.preventDefault();
+        const groupIds = new Set<string>();
+        // Find all groups that contain selected items
+        for (const id of selectedStrokeIdsRef.current) {
+          const gid = strokeGroupIdRef.current.get(id);
+          if (gid) groupIds.add(gid);
+        }
+        for (const id of selectedTextFieldIdsRef.current) {
+          const gid = textFieldGroupIdRef.current.get(id);
+          if (gid) groupIds.add(gid);
+        }
+        // Ungroup all found groups
+        for (const gid of groupIds) {
+          const group = groupsRef.current.get(gid);
+          if (group) {
+            for (const id of group.strokeIds) {
+              strokeGroupIdRef.current.delete(id);
+            }
+            for (const id of group.textFieldIds) {
+              textFieldGroupIdRef.current.delete(id);
+            }
+            groupsRef.current.delete(gid);
+          }
+        }
+        if (groupIds.size > 0) {
+          pushHistory('Ungroup', true);
+          renderAll();
+          renderSelectionOverlay();
+        }
       }
 
       // Delete selected strokes
@@ -2318,12 +3948,25 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
   useEffect(() => { sizeRef.current = size; }, [size]);
   useEffect(() => { eraserModeRef.current = eraserMode; }, [eraserMode]);
   useEffect(() => { shapeFillRef.current = shapeFill; }, [shapeFill]);
+  useEffect(() => { cornerRadiusRef.current = cornerRadius; }, [cornerRadius]);
+  useEffect(() => { polygonSidesRef.current = polygonSides; }, [polygonSides]);
+  useEffect(() => { starPointsRef.current = starPoints; }, [starPoints]);
+  
+  function updateRulers() {
+    // Ruler update logic - for now just a placeholder
+    // The rulers are rendered in the JSX, so this function can be used for dynamic updates if needed
+    if (!showRulersRef.current) return;
+    // Future: Add logic to update ruler markings based on zoom/pan
+  }
+  
   useEffect(() => {
     showGridRef.current = showGrid;
+    showRulersRef.current = showRulers;
     gridSizeRef.current = gridSize;
     renderGrid();
+    updateRulers();
     updateCursor();
-  }, [showGrid, gridSize]);
+  }, [showGrid, gridSize, showRulers]);
   useEffect(() => {
     if (isDrawingRef.current) return;
     drawBrushCursorOnly();
@@ -2390,13 +4033,54 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
 
     switch (mode) {
       case 'rect': {
-        const points = [
-          toPoint(minX, minY),
-          toPoint(maxX, minY),
-          toPoint(maxX, maxY),
-          toPoint(minX, maxY),
-        ];
-        return { points, closed: true };
+        const cornerRadius = cornerRadiusRef.current || 0;
+        if (cornerRadius > 0) {
+          // Generate rounded rectangle points
+          const r = Math.min(cornerRadius, width / 2, height / 2);
+          const points: Point[] = [];
+          const segments = 8; // segments per corner
+          
+          // Top edge (right to left)
+          points.push(toPoint(maxX - r, minY));
+          // Top-right corner
+          for (let i = 0; i <= segments; i++) {
+            const angle = Math.PI / 2 * (i / segments);
+            points.push(toPoint(maxX - r + r * Math.cos(angle), minY + r - r * Math.sin(angle)));
+          }
+          // Right edge
+          points.push(toPoint(maxX, minY + r));
+          points.push(toPoint(maxX, maxY - r));
+          // Bottom-right corner
+          for (let i = 0; i <= segments; i++) {
+            const angle = Math.PI / 2 * (i / segments);
+            points.push(toPoint(maxX - r + r * Math.cos(Math.PI / 2 + angle), maxY - r + r * Math.sin(Math.PI / 2 + angle)));
+          }
+          // Bottom edge
+          points.push(toPoint(maxX - r, maxY));
+          points.push(toPoint(minX + r, maxY));
+          // Bottom-left corner
+          for (let i = 0; i <= segments; i++) {
+            const angle = Math.PI / 2 * (i / segments);
+            points.push(toPoint(minX + r - r * Math.cos(Math.PI + angle), maxY - r + r * Math.sin(Math.PI + angle)));
+          }
+          // Left edge
+          points.push(toPoint(minX, maxY - r));
+          points.push(toPoint(minX, minY + r));
+          // Top-left corner
+          for (let i = 0; i <= segments; i++) {
+            const angle = Math.PI / 2 * (i / segments);
+            points.push(toPoint(minX + r - r * Math.cos(Math.PI * 1.5 + angle), minY + r - r * Math.sin(Math.PI * 1.5 + angle)));
+          }
+          return { points, closed: true };
+        } else {
+          const points = [
+            toPoint(minX, minY),
+            toPoint(maxX, minY),
+            toPoint(maxX, maxY),
+            toPoint(minX, maxY),
+          ];
+          return { points, closed: true };
+        }
       }
       case 'ellipse': {
         const cx = (minX + maxX) / 2;
@@ -2487,6 +4171,36 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
           endBase,
         ];
         return { points, closed: false };
+      }
+      case 'polygon': {
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const rx = Math.max(8, width / 2);
+        const ry = Math.max(8, height / 2);
+        const sides = Math.max(3, Math.min(20, polygonSidesRef.current || 5));
+        const points: Point[] = [];
+        for (let i = 0; i < sides; i++) {
+          const angle = (i / sides) * Math.PI * 2 - Math.PI / 2; // Start from top
+          points.push(toPoint(cx + rx * Math.cos(angle), cy + ry * Math.sin(angle)));
+        }
+        return { points, closed: true };
+      }
+      case 'star': {
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        const rx = Math.max(8, width / 2);
+        const ry = Math.max(8, height / 2);
+        const points = starPointsRef.current || 5;
+        const numPoints = Math.max(3, Math.min(20, points));
+        const outerRadius = Math.min(rx, ry);
+        const innerRadius = outerRadius * 0.5; // Inner radius is 50% of outer
+        const starPoints: Point[] = [];
+        for (let i = 0; i < numPoints * 2; i++) {
+          const angle = (i / (numPoints * 2)) * Math.PI * 2 - Math.PI / 2; // Start from top
+          const radius = i % 2 === 0 ? outerRadius : innerRadius;
+          starPoints.push(toPoint(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)));
+        }
+        return { points: starPoints, closed: true };
       }
       default:
         return { points: [toPoint(sx, sy), toPoint(ex, ey)], closed: false };
@@ -2662,7 +4376,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const end = snapEndForShape(mode as ShapeKind, start, rawEnd);
       const sample = shapeSample(mode as ShapeKind, start, end, fallbackWidth, fallbackHeight);
       if (sample.points.length) {
-        strokesRef.current.push({
+        const stroke: Stroke = {
           id: createHistoryId(),
           mode: 'shape',
           shape: mode as ShapeKind,
@@ -2672,7 +4386,18 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
           points: sample.points,
           closed: sample.closed,
           layerId: activeLayerIdRef.current,
-        });
+        };
+        // Add shape-specific parameters
+        if (mode === 'rect' && cornerRadiusRef.current > 0) {
+          stroke.cornerRadius = cornerRadiusRef.current;
+        }
+        if (mode === 'polygon') {
+          stroke.sides = polygonSidesRef.current;
+        }
+        if (mode === 'star') {
+          stroke.starPoints = starPointsRef.current;
+        }
+        strokesRef.current.push(stroke);
       }
     } else {
       // Stroke erase mode: remove the nearest stroke under cursor (tap/drag)
@@ -2727,11 +4452,15 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     ctxBg.fillStyle = bg;
     ctxBg.fillRect(0, 0, rect.width, rect.height);
     renderGrid();
-    // reset vector strokes, text fields and history so old content doesn't reappear
+    // reset vector strokes, text fields, images and history so old content doesn't reappear
     strokesRef.current = [];
     textFieldsRef.current = [];
+    imagesRef.current.clear();
+    selectedImageIdRef.current = null;
+    imageSelectedRef.current = false;
+    imageManipulationRef.current = null;
     editingTextFieldRef.current = null;
-    selectedTextFieldRef.current = null;
+    selectedTextFieldIdsRef.current.clear();
     notifySelectedTextField();
     historyRef.current = [];
     historyIndexRef.current = -1;
@@ -2751,10 +4480,35 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       ctxBg.clearRect(0, 0, rect.width, rect.height);
       ctxBg.fillStyle = bg;
       ctxBg.fillRect(0, 0, rect.width, rect.height);
-      // redraw last background image (if any) with saved placement
-      if (bgImageRef.current && bgPlacementRef.current) {
-        const { dx, dy, dw, dh } = bgPlacementRef.current;
-        ctxBg.drawImage(bgImageRef.current, dx, dy, dw, dh);
+      // Draw all images with their saved placement, rotation, and opacity
+      for (const canvasImage of imagesRef.current.values()) {
+        const { dx, dy, dw, dh, rotation = 0, opacity = 1, crop } = canvasImage.placement;
+        ctxBg.save();
+        ctxBg.globalAlpha = opacity;
+        
+        if (rotation !== 0) {
+          // Rotate around the center of the image
+          const centerX = dx + dw / 2;
+          const centerY = dy + dh / 2;
+          ctxBg.translate(centerX, centerY);
+          ctxBg.rotate((rotation * Math.PI) / 180);
+          ctxBg.translate(-centerX, -centerY);
+        }
+        
+        if (crop) {
+          // Draw cropped portion
+          const scaleX = canvasImage.image.width / dw;
+          const scaleY = canvasImage.image.height / dh;
+          const sx = (crop.x - dx) * scaleX;
+          const sy = (crop.y - dy) * scaleY;
+          const sw = crop.w * scaleX;
+          const sh = crop.h * scaleY;
+          ctxBg.drawImage(canvasImage.image, sx, sy, sw, sh, crop.x, crop.y, crop.w, crop.h);
+        } else {
+          ctxBg.drawImage(canvasImage.image, dx, dy, dw, dh);
+        }
+        
+        ctxBg.restore();
       }
     } catch {}
   }
@@ -2785,18 +4539,30 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     } catch { return null; }
   }
 
-  function exportPng() {
+  function exportPng(options?: ExportOptions) {
     try {
-      // composite bg + drawing onto temp canvas
       const host = hostRef.current as HTMLElement;
       const rect = host.getBoundingClientRect();
+      const dpi = options?.dpi || 96;
+      const scale = dpi / 96;
       const tmp = document.createElement('canvas');
-      tmp.width = rect.width; tmp.height = rect.height;
+      tmp.width = Math.floor(rect.width * scale);
+      tmp.height = Math.floor(rect.height * scale);
       const ctx = tmp.getContext('2d')!;
-      ctx.drawImage(bgRef.current!, 0, 0, rect.width, rect.height);
+      
+      // Set up scaling
+      ctx.scale(scale, scale);
+      
+      // Draw background (or transparent)
+      if (!options?.transparent) {
+        ctx.drawImage(bgRef.current!, 0, 0, rect.width, rect.height);
+      } else {
+        ctx.clearRect(0, 0, rect.width, rect.height);
+      }
+      
       // re-render strokes and text fields into tmp so export always matches current zoom
       const z = zoomRef.current || 1; const pan = panRef.current;
-      ctx.setTransform(z,0,0,z,pan.x,pan.y);
+      ctx.setTransform(z * scale, 0, 0, z * scale, pan.x * scale, pan.y * scale);
       ensureLayerIntegrity();
       for (const layer of layersRef.current) {
         if (!layer.visible) continue;
@@ -2809,22 +4575,29 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     }
   }
 
-  function exportPngSelection() {
+  function exportPngSelection(options?: ExportOptions) {
     try {
       ensureLayerIntegrity();
       const host = hostRef.current as HTMLElement;
       const rect = host.getBoundingClientRect();
       const z = zoomRef.current || 1;
       const pan = panRef.current;
+      const dpi = options?.dpi || 96;
+      const scale = dpi / 96;
 
       // Determine selection bounds in world coords
       let worldBounds: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
-      if (selectedStrokeIdsRef.current.size) {
-        worldBounds = getSelectionBounds(selectedStrokeIdsRef.current);
-      } else if (selectedTextFieldRef.current) {
-        const f = textFieldsRef.current.find((t) => t.id === selectedTextFieldRef.current);
-        if (f) {
-          worldBounds = { minX: f.x, minY: f.y, maxX: f.x + f.width, maxY: f.y + f.height };
+      const items = getAllSelectedBounds();
+      if (items.length > 0) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const item of items) {
+          if (item.bounds.minX < minX) minX = item.bounds.minX;
+          if (item.bounds.minY < minY) minY = item.bounds.minY;
+          if (item.bounds.maxX > maxX) maxX = item.bounds.maxX;
+          if (item.bounds.maxY > maxY) maxY = item.bounds.maxY;
+        }
+        if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)) {
+          worldBounds = { minX, minY, maxX, maxY };
         }
       }
       if (!worldBounds) return null;
@@ -2841,15 +4614,20 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const cropH = Math.max(1, Math.floor(Math.min(rect.height, Math.max(y0, y1)) - cropY));
 
       const tmp = document.createElement('canvas');
-      tmp.width = cropW;
-      tmp.height = cropH;
+      tmp.width = Math.floor(cropW * scale);
+      tmp.height = Math.floor(cropH * scale);
       const ctx = tmp.getContext('2d')!;
+      ctx.scale(scale, scale);
 
-      // Background crop
-      ctx.drawImage(bgRef.current!, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      // Background crop (or transparent)
+      if (!options?.transparent) {
+        ctx.drawImage(bgRef.current!, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      } else {
+        ctx.clearRect(0, 0, cropW, cropH);
+      }
 
       // Render strokes/text with same world->screen mapping, offset by crop
-      ctx.setTransform(z, 0, 0, z, pan.x - cropX, pan.y - cropY);
+      ctx.setTransform(z * scale, 0, 0, z * scale, (pan.x - cropX) * scale, (pan.y - cropY) * scale);
       for (const layer of layersRef.current) {
         if (!layer.visible) continue;
         drawStrokes(ctx, z, layer.id);
@@ -2858,6 +4636,272 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       return tmp.toDataURL('image/png');
     } catch {
       return null;
+    }
+  }
+
+  function exportSvg(options?: ExportOptions) {
+    try {
+      const host = hostRef.current as HTMLElement;
+      const rect = host.getBoundingClientRect();
+      const z = zoomRef.current || 1;
+      const pan = panRef.current;
+      
+      // Calculate bounds of all visible content
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let hasContent = false;
+      
+      ensureLayerIntegrity();
+      for (const layer of layersRef.current) {
+        if (!layer.visible) continue;
+        for (const stroke of strokesRef.current) {
+          if ((stroke.layerId || layersRef.current[0]?.id || 'layer-1') !== layer.id) continue;
+          for (const pt of stroke.points) {
+            minX = Math.min(minX, pt.x);
+            minY = Math.min(minY, pt.y);
+            maxX = Math.max(maxX, pt.x);
+            maxY = Math.max(maxY, pt.y);
+            hasContent = true;
+          }
+        }
+        for (const field of textFieldsRef.current) {
+          if ((field.layerId || layersRef.current[0]?.id || 'layer-1') !== layer.id) continue;
+          minX = Math.min(minX, field.x);
+          minY = Math.min(minY, field.y);
+          maxX = Math.max(maxX, field.x + field.width);
+          maxY = Math.max(maxY, field.y + field.height);
+          hasContent = true;
+        }
+      }
+      
+      // If no content, use canvas dimensions
+      if (!hasContent) {
+        minX = 0;
+        minY = 0;
+        maxX = rect.width;
+        maxY = rect.height;
+      }
+      
+      const padding = 20;
+      const width = maxX - minX + padding * 2;
+      const height = maxY - minY + padding * 2;
+      
+      let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${minX - padding} ${minY - padding} ${width} ${height}">`;
+      
+      // Background (if not transparent)
+      if (!options?.transparent) {
+        const bg = getComputedStyle(document.documentElement).getPropertyValue('--color-canvas') || '#111111';
+        svg += `<rect x="${minX - padding}" y="${minY - padding}" width="${width}" height="${height}" fill="${bg}"/>`;
+      }
+      
+      // Background images (if any)
+      for (const canvasImage of imagesRef.current.values()) {
+        const { dx, dy, dw, dh } = canvasImage.placement;
+        const imgData = canvasImage.image.src || '';
+        svg += `<image href="${imgData}" x="${dx}" y="${dy}" width="${dw}" height="${dh}"/>`;
+      }
+      
+      // Draw strokes
+      for (const layer of layersRef.current) {
+        if (!layer.visible) continue;
+        for (const stroke of strokesRef.current) {
+          if ((stroke.layerId || layersRef.current[0]?.id || 'layer-1') !== layer.id) continue;
+          if (stroke.mode === 'shape' && stroke.shape) {
+            svg += shapeToSvg(stroke);
+          } else if (stroke.mode !== 'eraser') {
+            svg += strokeToSvg(stroke);
+          }
+        }
+      }
+      
+      // Draw text fields
+      for (const layer of layersRef.current) {
+        if (!layer.visible) continue;
+        for (const field of textFieldsRef.current) {
+          if ((field.layerId || layersRef.current[0]?.id || 'layer-1') !== layer.id) continue;
+          svg += textFieldToSvg(field);
+        }
+      }
+      
+      svg += '</svg>';
+      return svg;
+    } catch {
+      return null;
+    }
+  }
+  
+  function strokeToSvg(stroke: Stroke): string {
+    if (stroke.points.length < 2) return '';
+    const pts = stroke.points;
+    let path = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const p0 = pts[i - 1] || pts[i];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[i + 2] || p2;
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+    }
+    const opacity = stroke.mode === 'highlighter' ? 0.35 : stroke.mode === 'marker' ? 0.85 : 0.95;
+    return `<path d="${path}" stroke="${stroke.color}" stroke-width="${stroke.size}" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`;
+  }
+  
+  function shapeToSvg(stroke: Stroke): string {
+    if (!stroke.shape || !stroke.points.length) return '';
+    const pts = stroke.points;
+    const color = stroke.color;
+    const width = stroke.size;
+    const fill = stroke.closed && stroke.fill ? color : 'none';
+    const fillOpacity = stroke.closed && stroke.fill ? 0.14 : 0;
+    
+    switch (stroke.shape) {
+      case 'line':
+        if (pts.length < 2) return '';
+        return `<line x1="${pts[0].x}" y1="${pts[0].y}" x2="${pts[pts.length - 1].x}" y2="${pts[pts.length - 1].y}" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/>`;
+      case 'rect':
+        if (pts.length < 2) return '';
+        const x1 = Math.min(pts[0].x, pts[pts.length - 1].x);
+        const y1 = Math.min(pts[0].y, pts[pts.length - 1].y);
+        const x2 = Math.max(pts[0].x, pts[pts.length - 1].x);
+        const y2 = Math.max(pts[0].y, pts[pts.length - 1].y);
+        return `<rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" stroke="${color}" stroke-width="${width}" fill="${fill}" fill-opacity="${fillOpacity}"/>`;
+      case 'ellipse': {
+        if (pts.length < 2) return '';
+        const cx = (pts[0].x + pts[pts.length - 1].x) / 2;
+        const cy = (pts[0].y + pts[pts.length - 1].y) / 2;
+        const rx = Math.abs(pts[pts.length - 1].x - pts[0].x) / 2;
+        const ry = Math.abs(pts[pts.length - 1].y - pts[0].y) / 2;
+        return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" stroke="${color}" stroke-width="${width}" fill="${fill}" fill-opacity="${fillOpacity}"/>`;
+      }
+      case 'triangle':
+        if (pts.length < 3) return '';
+        const p1 = pts[0];
+        const p2 = pts[Math.floor(pts.length / 2)];
+        const p3 = pts[pts.length - 1];
+        return `<polygon points="${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y}" stroke="${color}" stroke-width="${width}" fill="${fill}" fill-opacity="${fillOpacity}"/>`;
+      case 'diamond': {
+        if (pts.length < 2) return '';
+        const cx = (pts[0].x + pts[pts.length - 1].x) / 2;
+        const cy = (pts[0].y + pts[pts.length - 1].y) / 2;
+        const dx = Math.abs(pts[pts.length - 1].x - pts[0].x) / 2;
+        const dy = Math.abs(pts[pts.length - 1].y - pts[0].y) / 2;
+        return `<polygon points="${cx},${cy - dy} ${cx + dx},${cy} ${cx},${cy + dy} ${cx - dx},${cy}" stroke="${color}" stroke-width="${width}" fill="${fill}" fill-opacity="${fillOpacity}"/>`;
+      }
+      case 'hexagon':
+        if (pts.length < 2) return '';
+        const hcx = (pts[0].x + pts[pts.length - 1].x) / 2;
+        const hcy = (pts[0].y + pts[pts.length - 1].y) / 2;
+        const hr = Math.max(Math.abs(pts[pts.length - 1].x - pts[0].x), Math.abs(pts[pts.length - 1].y - pts[0].y)) / 2;
+        const hexPoints: string[] = [];
+        for (let i = 0; i < 6; i++) {
+          const angle = (Math.PI / 3) * i;
+          hexPoints.push(`${hcx + hr * Math.cos(angle)},${hcy + hr * Math.sin(angle)}`);
+        }
+        return `<polygon points="${hexPoints.join(' ')}" stroke="${color}" stroke-width="${width}" fill="${fill}" fill-opacity="${fillOpacity}"/>`;
+      case 'arrow':
+      case 'double-arrow':
+        if (pts.length < 2) return '';
+        const ax1 = pts[0].x;
+        const ay1 = pts[0].y;
+        const ax2 = pts[pts.length - 1].x;
+        const ay2 = pts[pts.length - 1].y;
+        const angle = Math.atan2(ay2 - ay1, ax2 - ax1);
+        const arrowLength = width * 3;
+        const arrowAngle = Math.PI / 6;
+        const arrow1x = ax2 - arrowLength * Math.cos(angle - arrowAngle);
+        const arrow1y = ay2 - arrowLength * Math.sin(angle - arrowAngle);
+        const arrow2x = ax2 - arrowLength * Math.cos(angle + arrowAngle);
+        const arrow2y = ay2 - arrowLength * Math.sin(angle + arrowAngle);
+        let arrowSvg = `<line x1="${ax1}" y1="${ay1}" x2="${ax2}" y2="${ay2}" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/>`;
+        arrowSvg += `<polygon points="${ax2},${ay2} ${arrow1x},${arrow1y} ${arrow2x},${arrow2y}" fill="${color}"/>`;
+        if (stroke.shape === 'double-arrow') {
+          const arrow3x = ax1 + arrowLength * Math.cos(angle - arrowAngle);
+          const arrow3y = ay1 + arrowLength * Math.sin(angle - arrowAngle);
+          const arrow4x = ax1 + arrowLength * Math.cos(angle + arrowAngle);
+          const arrow4y = ay1 + arrowLength * Math.sin(angle + arrowAngle);
+          arrowSvg += `<polygon points="${ax1},${ay1} ${arrow3x},${arrow3y} ${arrow4x},${arrow4y}" fill="${color}"/>`;
+        }
+        return arrowSvg;
+      default:
+        // Generic polygon for other shapes
+        if (pts.length < 2) return '';
+        const polyPoints = pts.map(p => `${p.x},${p.y}`).join(' ');
+        return `<polyline points="${polyPoints}" stroke="${color}" stroke-width="${width}" fill="${fill}" fill-opacity="${fillOpacity}" ${stroke.closed ? 'stroke-linejoin="round"' : ''}/>`;
+    }
+  }
+  
+  function textFieldToSvg(field: TextField): string {
+    const lines = getWrappedTextLinesForSvg(field);
+    if (!lines.length) return '';
+    const lineHeight = field.fontSize * 1.2;
+    let svg = `<g>`;
+    lines.forEach((line, idx) => {
+      svg += `<text x="${field.x + 2}" y="${field.y + 2 + idx * lineHeight}" font-family="sans-serif" font-size="${field.fontSize}" fill="${field.color}">${escapeXml(line)}</text>`;
+    });
+    svg += `</g>`;
+    return svg;
+  }
+  
+  function escapeXml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+  
+  function getWrappedTextLinesForSvg(field: TextField): string[] {
+    // Simple word wrapping implementation for SVG export
+    const words = field.text.split(/\s+/);
+    const lines: string[] = [];
+    let currentLine = '';
+    const maxWidth = field.width - 4;
+    
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      // Approximate text width (rough estimate)
+      const testWidth = testLine.length * field.fontSize * 0.6;
+      if (testWidth > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  }
+  
+  function exportPdf(options?: ExportOptions) {
+    try {
+      // Dynamic import to avoid bundling jsPDF if not needed
+      return import('jspdf').then((jsPDF) => {
+        const host = hostRef.current as HTMLElement;
+        const rect = host.getBoundingClientRect();
+        const dpi = options?.dpi || 96;
+        const scale = dpi / 96;
+        
+        // Get PNG data
+        const pngData = exportPng({ ...options, dpi });
+        if (!pngData) return null;
+        
+        // Create PDF
+        const pdf = new jsPDF.default({
+          orientation: rect.width > rect.height ? 'landscape' : 'portrait',
+          unit: 'px',
+          format: [rect.width * scale, rect.height * scale]
+        });
+        
+        // Add image to PDF
+        pdf.addImage(pngData, 'PNG', 0, 0, rect.width * scale, rect.height * scale);
+        
+        return pdf.output('blob');
+      }).catch(() => null);
+    } catch {
+      return Promise.resolve(null);
     }
   }
 
@@ -2870,11 +4914,11 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     localStorage.setItem('ai-canvas-boards-react', JSON.stringify(boards));
   }
 
-  function loadImage(dataUrl: string) {
+  function loadImage(dataUrl: string): string | null {
     const img = new Image();
+    const imageId = createHistoryId();
     img.onload = () => {
       const rect = (hostRef.current as HTMLDivElement).getBoundingClientRect();
-      const ctxBg = ctxBgRef.current!;
       // fit image into background preserving aspect ratio
       const iw = img.width, ih = img.height;
       const scale = Math.min(rect.width / iw, rect.height / ih);
@@ -2882,13 +4926,174 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       const dh = Math.max(1, Math.floor(ih * scale));
       const dx = Math.floor((rect.width - dw) / 2);
       const dy = Math.floor((rect.height - dh) / 2);
-      ctxBg.clearRect(0, 0, rect.width, rect.height);
-      ctxBg.drawImage(img, dx, dy, dw, dh);
-      bgImageRef.current = img;
-      bgPlacementRef.current = { dx, dy, dw, dh };
+      
+      imagesRef.current.set(imageId, {
+        id: imageId,
+        image: img,
+        placement: { dx, dy, dw, dh, rotation: 0, opacity: 1 }
+      });
+      
+      selectedImageIdRef.current = imageId;
+      imageSelectedRef.current = true;
+      refreshBackground();
       pushHistory();
     };
+    img.onerror = () => {};
     img.src = dataUrl;
+    return imageId;
+  }
+
+  function addImage(dataUrl: string): string | null {
+    return loadImage(dataUrl);
+  }
+
+  function removeImage(imageId: string) {
+    imagesRef.current.delete(imageId);
+    if (selectedImageIdRef.current === imageId) {
+      selectedImageIdRef.current = null;
+      imageSelectedRef.current = false;
+    }
+    refreshBackground();
+    pushHistory();
+  }
+
+  function getAllImages() {
+    return Array.from(imagesRef.current.values()).map(img => ({
+      id: img.id,
+      opacity: img.placement.opacity,
+      rotation: img.placement.rotation
+    }));
+  }
+
+  function getImageState(imageId?: string) {
+    const id = imageId || selectedImageIdRef.current;
+    if (!id) {
+      return imagesRef.current.size > 0 ? { hasImage: true, opacity: 1, rotation: 0 } : null;
+    }
+    const img = imagesRef.current.get(id);
+    if (!img) return null;
+    const placement = img.placement;
+    return {
+      hasImage: true,
+      opacity: placement.opacity ?? 1,
+      rotation: placement.rotation ?? 0,
+      crop: placement.crop ? {
+        x: placement.crop.x,
+        y: placement.crop.y,
+        width: placement.crop.w,
+        height: placement.crop.h
+      } : undefined
+    };
+  }
+
+  function setImageOpacity(opacity: number, imageId?: string) {
+    const id = imageId || selectedImageIdRef.current;
+    if (!id) return;
+    const img = imagesRef.current.get(id);
+    if (!img) return;
+    img.placement.opacity = Math.max(0, Math.min(1, opacity));
+    refreshBackground();
+    pushHistory();
+  }
+
+  function setImageRotation(rotation: number, imageId?: string) {
+    const id = imageId || selectedImageIdRef.current;
+    if (!id) return;
+    const img = imagesRef.current.get(id);
+    if (!img) return;
+    img.placement.rotation = rotation % 360;
+    refreshBackground();
+    pushHistory();
+  }
+
+  function setImageSize(width: number, height: number, imageId?: string) {
+    const id = imageId || selectedImageIdRef.current;
+    if (!id) return;
+    const img = imagesRef.current.get(id);
+    if (!img) return;
+    img.placement.dw = Math.max(1, width);
+    img.placement.dh = Math.max(1, height);
+    refreshBackground();
+    pushHistory();
+  }
+
+  function setImagePosition(x: number, y: number, imageId?: string) {
+    const id = imageId || selectedImageIdRef.current;
+    if (!id) return;
+    const img = imagesRef.current.get(id);
+    if (!img) return;
+    img.placement.dx = x;
+    img.placement.dy = y;
+    refreshBackground();
+    pushHistory();
+  }
+
+  function cropImage(x: number, y: number, width: number, height: number, imageId?: string) {
+    const id = imageId || selectedImageIdRef.current;
+    if (!id) return;
+    const canvasImage = imagesRef.current.get(id);
+    if (!canvasImage) return;
+    const placement = canvasImage.placement;
+    const img = canvasImage.image;
+    
+    // Create a temporary canvas to crop the image
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Calculate source coordinates in the original image
+    const scaleX = img.width / placement.dw;
+    const scaleY = img.height / placement.dh;
+    const sx = (x - placement.dx) * scaleX;
+    const sy = (y - placement.dy) * scaleY;
+    const sw = width * scaleX;
+    const sh = height * scaleY;
+    
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
+    
+    // Create new image from cropped canvas
+    const croppedImg = new Image();
+    croppedImg.onload = () => {
+      canvasImage.image = croppedImg;
+      // Update placement to show full cropped image
+      const rect = (hostRef.current as HTMLDivElement).getBoundingClientRect();
+      const scale = Math.min(rect.width / width, rect.height / height);
+      placement.dw = Math.max(1, Math.floor(width * scale));
+      placement.dh = Math.max(1, Math.floor(height * scale));
+      placement.dx = Math.floor((rect.width - placement.dw) / 2);
+      placement.dy = Math.floor((rect.height - placement.dh) / 2);
+      placement.crop = undefined; // Clear crop after applying
+      refreshBackground();
+      pushHistory();
+    };
+    croppedImg.src = canvas.toDataURL();
+  }
+
+  function selectImage(imageId?: string) {
+    if (imageId) {
+      if (imagesRef.current.has(imageId)) {
+        selectedImageIdRef.current = imageId;
+        imageSelectedRef.current = true;
+        renderSelectionOverlay();
+      }
+    } else {
+      // Select first image if available
+      const firstImage = Array.from(imagesRef.current.values())[0];
+      if (firstImage) {
+        selectedImageIdRef.current = firstImage.id;
+        imageSelectedRef.current = true;
+        renderSelectionOverlay();
+      }
+    }
+  }
+
+  function isImageSelected() {
+    return imageSelectedRef.current && selectedImageIdRef.current !== null && imagesRef.current.has(selectedImageIdRef.current);
+  }
+
+  function getSelectedImageId() {
+    return selectedImageIdRef.current;
   }
 
   function applyTransform() {
@@ -2899,6 +5104,7 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     updateTextInputPosition();
     syncPointerWorldFromClient();
     drawBrushCursorOnly();
+    updateRulers();
   }
 
   function drawStrokes(ctx: CanvasRenderingContext2D, z: number, layerId: string) {
@@ -2987,19 +5193,37 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
     for (const field of textFieldsRef.current) {
       if ((field.layerId || layersRef.current[0]?.id || 'layer-1') !== layerId) continue;
       const isEditing = editingTextFieldRef.current === field.id;
-      const isSelected = selectedTextFieldRef.current === field.id;
+      const isSelected = selectedTextFieldIdsRef.current.has(field.id);
       const showControls = isEditing || isSelected || brushRef.current === 'text';
       
       if (!isEditing) {
         const lines = getWrappedTextLines(field);
         if (lines.length) {
-          ctx.fillStyle = field.color;
-          ctx.font = `${field.fontSize}px sans-serif`;
+          const fontFamily = field.fontFamily || 'sans-serif';
+          const fontWeight = field.fontWeight || 'normal';
+          const fontStyle = field.fontStyle || 'normal';
+          const textColor = field.textColor || field.color;
+          const textAlign = field.textAlign || 'left';
+          
+          ctx.fillStyle = textColor;
+          ctx.font = `${fontStyle} ${fontWeight} ${field.fontSize}px ${fontFamily}`;
           ctx.textBaseline = 'top';
+          ctx.textAlign = textAlign;
           const lineHeight = field.fontSize * 1.2;
+          const padding = 2;
+          
           lines.forEach((line, idx) => {
-            ctx.fillText(line, field.x + 2, field.y + 2 + idx * lineHeight);
+            let x = field.x + padding;
+            if (textAlign === 'center') {
+              x = field.x + field.width / 2;
+            } else if (textAlign === 'right') {
+              x = field.x + field.width - padding;
+            }
+            ctx.fillText(line, x, field.y + padding + idx * lineHeight);
           });
+          
+          // Reset textAlign for other drawing operations
+          ctx.textAlign = 'left';
         }
       }
       
@@ -3246,15 +5470,73 @@ export const CanvasBoard = forwardRef<CanvasBoardRef, Props>(({ brush, color, si
       <div ref={hitRef} style={{ position:'absolute', inset:0, zIndex:5, touchAction:'pan-y pan-x' }} />
       {/* Keep background full-size (not scaled) */}
       <canvas ref={bgRef} className="board" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }} aria-label="Background layer" />
+      {/* Rulers */}
+      {showRulersRef.current && (
+        <>
+          <div
+            className="canvas-ruler canvas-ruler-horizontal"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: '24px',
+              right: 0,
+              height: '24px',
+              background: 'var(--bg-secondary, #1e293b)',
+              borderBottom: '1px solid var(--border, #334155)',
+              zIndex: 10,
+              pointerEvents: 'none',
+              fontSize: '10px',
+              color: 'var(--text-secondary, #94a3b8)',
+              display: 'flex',
+              alignItems: 'center',
+              overflow: 'hidden',
+            }}
+          />
+          <div
+            className="canvas-ruler canvas-ruler-vertical"
+            style={{
+              position: 'absolute',
+              top: '24px',
+              left: 0,
+              bottom: 0,
+              width: '24px',
+              background: 'var(--bg-secondary, #1e293b)',
+              borderRight: '1px solid var(--border, #334155)',
+              zIndex: 10,
+              pointerEvents: 'none',
+              fontSize: '10px',
+              color: 'var(--text-secondary, #94a3b8)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '24px',
+              height: '24px',
+              background: 'var(--bg-secondary, #1e293b)',
+              borderRight: '1px solid var(--border, #334155)',
+              borderBottom: '1px solid var(--border, #334155)',
+              zIndex: 11,
+            }}
+          />
+        </>
+      )}
       {/* Scale/pan only the drawing layers */}
-      <div ref={contentRef} style={{ position:'absolute', inset:0 }}>
+      <div ref={contentRef} style={{ position:'absolute', ...(showRulersRef.current ? { top: '24px', left: '24px', right: 0, bottom: 0 } : { inset: 0 }) }}>
         <canvas ref={gridRef} className="board" style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }} aria-label="Grid layer" />
         <canvas ref={drawRef} className="board" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }} aria-label="Drawing layer" />
         <canvas ref={overlayRef} className="board" style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }} aria-label="Overlay layer" />
       </div>
     </div>
   );
-});
+};
+
+export const CanvasBoard = forwardRef(CanvasBoardComponent);
 
 CanvasBoard.displayName = 'CanvasBoard';
 

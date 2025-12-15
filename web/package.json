@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@types/katex": "^0.16.7",
+    "jspdf": "^3.0.4",
     "katex": "^0.16.27",
     "lucide-react": "^0.548.0",
     "markdown-it": "^14.1.0",

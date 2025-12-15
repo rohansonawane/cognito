@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState, useEffect, useLayoutEffect, Suspense 
 import { renderMathOnly } from './utils/markdown';
 import 'katex/dist/katex.min.css';
 import { CanvasBoard, CanvasBoardRef, HistorySnapshot, type BrushKind, type CanvasTextField, type CanvasLayer } from './components/CanvasBoard';
-import { analyze } from './ai/api';
+import { analyze, recognizeShapes, suggestLayout } from './ai/api';
 import logoImage from './assets/Logo.png';
 import {
   Undo2,
@@ -13,7 +13,6 @@ import {
   Palette,
   SlidersHorizontal,
   Download as DownloadIcon,
-  Crop,
   Save,
   Image as ImageIcon,
   Trash2,
@@ -46,6 +45,22 @@ import {
   Type,
   Hand,
   Shapes,
+  AlignLeft,
+  AlignRight,
+  AlignCenter,
+  ArrowUp,
+  ArrowDown,
+  Minus,
+  MoreHorizontal,
+  RotateCw,
+  RotateCcw,
+  Wand2,
+  Layout,
+  ImagePlus,
+  X,
+  Maximize2,
+  Minimize2,
+  Move,
 } from 'lucide-react';
 import { ColorPicker } from './components/ColorPicker';
 import { SizeControl } from './components/SizeControl';
@@ -391,6 +406,30 @@ export default function App() {
       return false;
     }
   });
+  const [cornerRadius, setCornerRadius] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('COGNITO_CORNER_RADIUS');
+      return v ? parseInt(v, 10) : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [polygonSides, setPolygonSides] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('COGNITO_POLYGON_SIDES');
+      return v ? parseInt(v, 10) : 5;
+    } catch {
+      return 5;
+    }
+  });
+  const [starPoints, setStarPoints] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('COGNITO_STAR_POINTS');
+      return v ? parseInt(v, 10) : 5;
+    } catch {
+      return 5;
+    }
+  });
   const [recentColors, setRecentColors] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem('COGNITO_RECENT_COLORS');
@@ -402,24 +441,113 @@ export default function App() {
   });
   const [aiText, setAiText] = useState('Draw something and press "Ask AI".');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isRecognizingShapes, setIsRecognizingShapes] = useState(false);
+  const [isSuggestingLayout, setIsSuggestingLayout] = useState(false);
   const [aiBorderActive, setAiBorderActive] = useState(false);
   const borderTimer = React.useRef<number | null>(null);
   const [promptText, setPromptText] = useState('');
   const [askClicked, setAskClicked] = useState(false);
+  const [aiPanelPos, setAiPanelPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [aiPanelSize, setAiPanelSize] = useState<{ width: number; height: number }>({ width: 360, height: 520 });
+  const [aiPanelMinimized, setAiPanelMinimized] = useState(false);
+  const [aiPanelMaximized, setAiPanelMaximized] = useState(false);
+  const aiPrevPanelRef = React.useRef<{ pos: { x: number; y: number }; size: { width: number; height: number } }>({
+    pos: { x: 0, y: 0 },
+    size: { width: 360, height: 520 },
+  });
+  const aiDragRef = React.useRef(false);
+  const aiResizeRef = React.useRef(false);
+  const aiDragOffsetRef = React.useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+  const aiResizeStartRef = React.useRef<{ x: number; y: number; width: number; height: number }>({
+    x: 0,
+    y: 0,
+    width: 360,
+    height: 520,
+  });
   const [provider, setProvider] = useState<Provider>('openai');
   const [askUsage, setAskUsage] = useState<{ count: number; resetAt: number }>(() => ({
     count: 0,
     resetAt: Date.now() + ASK_WINDOW_MS,
   }));
+  const [isMobile, setIsMobile] = useState(false);
+  const clampAiPos = React.useCallback(
+    (x: number, y: number, width: number, height: number) => ({
+      x: Math.max(8, Math.min(x, (window.innerWidth || width) - width - 8)),
+      y: Math.max(56, Math.min(y, (window.innerHeight || height) - height - 12)),
+    }),
+    []
+  );
+  useEffect(() => {
+    if (isMobile) return;
+    setAiPanelPos({
+      x: Math.max(12, (window.innerWidth || 0) - aiPanelSize.width - 20),
+      y: 80,
+    });
+  }, [isMobile, aiPanelSize.width]);
+  useEffect(() => {
+    if (isMobile) return;
+    const handleMove = (e: PointerEvent) => {
+      if (aiDragRef.current) {
+        const width = aiPanelMaximized ? Math.max(320, (window.innerWidth || 0) - 24) : aiPanelSize.width;
+        const height = aiPanelMaximized ? Math.max(320, (window.innerHeight || 0) - 80) : aiPanelSize.height;
+        const next = clampAiPos(e.clientX - aiDragOffsetRef.current.dx, e.clientY - aiDragOffsetRef.current.dy, width, height);
+        setAiPanelPos(next);
+      } else if (aiResizeRef.current) {
+        const dx = e.clientX - aiResizeStartRef.current.x;
+        const dy = e.clientY - aiResizeStartRef.current.y;
+        const width = Math.max(280, Math.min((window.innerWidth || 0) - aiPanelPos.x - 16, aiResizeStartRef.current.width + dx));
+        const height = Math.max(260, Math.min((window.innerHeight || 0) - aiPanelPos.y - 24, aiResizeStartRef.current.height + dy));
+        setAiPanelSize({ width, height });
+      }
+    };
+    const handleUp = () => {
+      aiDragRef.current = false;
+      aiResizeRef.current = false;
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [aiPanelMaximized, aiPanelPos.x, aiPanelPos.y, aiPanelSize.height, aiPanelSize.width, clampAiPos, isMobile]);
+  const startAiDrag = (e: React.PointerEvent) => {
+    if (aiPanelMaximized) return;
+    aiDragRef.current = true;
+    aiDragOffsetRef.current = { dx: e.clientX - aiPanelPos.x, dy: e.clientY - aiPanelPos.y };
+  };
+  const startAiResize = (e: React.PointerEvent) => {
+    if (aiPanelMaximized) return;
+    aiResizeRef.current = true;
+    aiResizeStartRef.current = { x: e.clientX, y: e.clientY, width: aiPanelSize.width, height: aiPanelSize.height };
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const toggleAiMinimize = () => setAiPanelMinimized((v) => !v);
+  const toggleAiMaximize = () => {
+    if (!aiPanelMaximized) {
+      aiPrevPanelRef.current = { pos: aiPanelPos, size: aiPanelSize };
+      setAiPanelPos({ x: 12, y: 12 });
+      setAiPanelSize({
+        width: Math.max(320, (window.innerWidth || 0) - 24),
+        height: Math.max(320, (window.innerHeight || 0) - 80),
+      });
+      setAiPanelMaximized(true);
+      setAiPanelMinimized(false);
+    } else {
+      setAiPanelPos(aiPrevPanelRef.current.pos);
+      setAiPanelSize(aiPrevPanelRef.current.size);
+      setAiPanelMaximized(false);
+    }
+  };
   const [isHandMode, setIsHandMode] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showHow, setShowHow] = useState(false);
   const howWrapRef = React.useRef<HTMLDivElement | null>(null);
   const [showLimit, setShowLimit] = useState(false);
   const canvasWrapRef = React.useRef<HTMLDivElement | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [activeMobilePanel, setActiveMobilePanel] = useState<'tools' | 'brush' | 'color' | 'size' | null>('tools');
+  const [activeMobilePanel, setActiveMobilePanel] = useState<'tools' | 'brush' | 'color' | 'size' | null>(null);
   const [historyTimeline, setHistoryTimeline] = useState<HistorySnapshot[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [historyLabel, setHistoryLabel] = useState('');
@@ -431,6 +559,7 @@ export default function App() {
   const [showGrid, setShowGrid] = useState(false);
   const [activeHowCard, setActiveHowCard] = useState<string>('quick');
   const [selectedTextField, setSelectedTextField] = useState<CanvasTextField | null>(null);
+  const [hasSelection, setHasSelection] = useState(false);
   type ToolPanelKey = 'shapes' | 'color' | 'size';
   const [activeToolPanel, setActiveToolPanel] = useState<ToolPanelKey | null>(null);
   const [toolAnchorRect, setToolAnchorRect] = useState<{ left: number; right: number; top: number; bottom: number; width: number; height: number } | null>(null);
@@ -441,6 +570,11 @@ export default function App() {
   const [toolArrowTop, setToolArrowTop] = useState<number>(0);
   const toolsDockRef = useRef<HTMLDivElement | null>(null);
   const toolsPanelRef = useRef<HTMLDivElement | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportIsSelection, setExportIsSelection] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'png' | 'svg' | 'pdf'>('png');
+  const [exportTransparent, setExportTransparent] = useState(false);
+  const [exportDpi, setExportDpi] = useState(96);
   const loadAskMeta = React.useCallback(() => {
     const now = Date.now();
     let meta: { count: number; resetAt: number } = { count: 0, resetAt: now + ASK_WINDOW_MS };
@@ -500,13 +634,15 @@ export default function App() {
       { key: 'triangle', label: 'Triangle', Icon: TriangleIcon },
       { key: 'diamond', label: 'Diamond', Icon: DiamondIcon },
       { key: 'hexagon', label: 'Hexagon', Icon: HexagonIcon },
+      { key: 'polygon', label: 'Polygon', Icon: Shapes },
+      { key: 'star', label: 'Star', Icon: Sparkles },
       { key: 'text', label: 'Text', Icon: Type },
     ],
     []
   );
 
   const SHAPE_BRUSHES = useMemo(
-    () => new Set<BrushKind>(['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon']),
+    () => new Set<BrushKind>(['line', 'rect', 'ellipse', 'arrow', 'double-arrow', 'triangle', 'diamond', 'hexagon', 'polygon', 'star']),
     []
   );
   const brushIsShape = SHAPE_BRUSHES.has(brush);
@@ -1142,6 +1278,24 @@ export default function App() {
     } catch {}
   }, [shapeFill]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('COGNITO_CORNER_RADIUS', cornerRadius.toString());
+    } catch {}
+  }, [cornerRadius]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('COGNITO_POLYGON_SIDES', polygonSides.toString());
+    } catch {}
+  }, [polygonSides]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('COGNITO_STAR_POINTS', starPoints.toString());
+    } catch {}
+  }, [starPoints]);
+
   const handleTextFieldChange = React.useCallback((field: CanvasTextField | null) => {
     setSelectedTextField(field);
   }, []);
@@ -1199,23 +1353,136 @@ export default function App() {
     borderTimer.current = window.setTimeout(() => { setAiBorderActive(false); borderTimer.current = null; }, 3000);
   }
 
-  function onDownload() {
+  async function onRecognizeShapes() {
+    const meta = loadAskMeta();
+    if (meta.count >= ASK_LIMIT) {
+      setAskUsage(meta);
+      setShowLimit(true);
+      return;
+    }
+    const nextMeta = { ...meta, count: meta.count + 1 };
+    saveAskMeta(nextMeta);
     const dataUrl = boardRef.current?.exportPng();
     if (!dataUrl) return;
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = `canvas-${Date.now()}.png`;
-    a.click();
+    setIsRecognizingShapes(true);
+    const strokes = boardRef.current?.getAllStrokes?.() || [];
+    const res = await recognizeShapes({ image: dataUrl, provider, strokes });
+    setIsRecognizingShapes(false);
+    if (!res.ok || !res.shapes || res.shapes.length === 0) {
+      setAiText(res.error || 'No shapes recognized. Try drawing clearer shapes.');
+      return;
+    }
+    boardRef.current?.convertShapesToPerfect?.(res.shapes);
+    setAiText(`Recognized and converted ${res.shapes.length} shape(s) to perfect geometric forms.`);
   }
 
-  function onDownloadSelection() {
-    const dataUrl = boardRef.current?.exportPngSelection?.();
+  async function onSuggestLayout() {
+    const meta = loadAskMeta();
+    if (meta.count >= ASK_LIMIT) {
+      setAskUsage(meta);
+      setShowLimit(true);
+      return;
+    }
+    const nextMeta = { ...meta, count: meta.count + 1 };
+    saveAskMeta(nextMeta);
+    const dataUrl = boardRef.current?.exportPng();
     if (!dataUrl) return;
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = `canvas-selection-${Date.now()}.png`;
-    a.click();
+    setIsSuggestingLayout(true);
+    const res = await suggestLayout({ image: dataUrl, provider });
+    setIsSuggestingLayout(false);
+    if (!res.ok || !res.layout) {
+      setAiText(res.error || 'Failed to get layout suggestions.');
+      return;
+    }
+    const { suggestions, alignment, spacing } = res.layout;
+    let message = 'Layout Suggestions:\n';
+    if (suggestions && suggestions.length > 0) {
+      message += suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n');
+    }
+    message += `\n\nRecommended: ${alignment} alignment with ${spacing}px spacing.`;
+    setAiText(message);
+    // Optionally auto-arrange based on suggestion
+    if (alignment === 'grid') {
+      boardRef.current?.autoArrange?.();
+    }
   }
+
+  function onAutoArrange() {
+    boardRef.current?.autoArrange?.();
+    setAiText('Elements have been automatically arranged in a grid layout.');
+  }
+
+  function onDownload() {
+    setExportIsSelection(false);
+    setShowExportMenu(true);
+  }
+
+  async function handleExport() {
+    try {
+      let blob: Blob | null = null;
+      let filename = '';
+      const timestamp = Date.now();
+      
+      if (exportFormat === 'svg') {
+        const svgData = exportIsSelection 
+          ? boardRef.current?.exportSvg?.({ transparent: exportTransparent, dpi: exportDpi })
+          : boardRef.current?.exportSvg?.({ transparent: exportTransparent, dpi: exportDpi });
+        if (!svgData) return;
+        blob = new Blob([svgData], { type: 'image/svg+xml' });
+        filename = `canvas-${exportIsSelection ? 'selection-' : ''}${timestamp}.svg`;
+      } else if (exportFormat === 'pdf') {
+        const pdfBlob = await boardRef.current?.exportPdf?.({ transparent: exportTransparent, dpi: exportDpi });
+        if (!pdfBlob) return;
+        blob = pdfBlob;
+        filename = `canvas-${exportIsSelection ? 'selection-' : ''}${timestamp}.pdf`;
+      } else {
+        // PNG
+        const dataUrl = exportIsSelection
+          ? boardRef.current?.exportPngSelection?.({ transparent: exportTransparent, dpi: exportDpi })
+          : boardRef.current?.exportPng({ transparent: exportTransparent, dpi: exportDpi });
+        if (!dataUrl) return;
+        // Convert data URL to blob
+        const response = await fetch(dataUrl);
+        blob = await response.blob();
+        filename = `canvas-${exportIsSelection ? 'selection-' : ''}${timestamp}.png`;
+      }
+      
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+      setShowExportMenu(false);
+    } catch (error) {
+      console.error('Export failed:', error);
+    }
+  }
+
+
+  function checkHasSelection() {
+    // Check if there's a selection by trying to export it
+    const hasSel = !!boardRef.current?.exportPngSelection?.();
+    setHasSelection(hasSel);
+    return hasSel;
+  }
+
+
+  const [imageState, setImageState] = useState<{ hasImage: boolean; opacity: number; rotation: number } | null>(null);
+  const [showImageControls, setShowImageControls] = useState(false);
+
+  useEffect(() => {
+    const checkImageState = () => {
+      const state = boardRef.current?.getImageState?.();
+      setImageState(state);
+      setShowImageControls(state?.hasImage ?? false);
+    };
+    checkImageState();
+    const interval = setInterval(checkImageState, 500);
+    return () => clearInterval(interval);
+  }, []);
 
   function onPickImage(files: FileList | null) {
     const file = files?.[0];
@@ -1223,7 +1490,24 @@ export default function App() {
     if (!file.type.startsWith('image/')) return;
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === 'string') boardRef.current?.loadImage(reader.result);
+      if (typeof reader.result === 'string') {
+        if (boardRef.current?.isImageSelected?.()) {
+          boardRef.current?.replaceImage?.(reader.result);
+        } else {
+          boardRef.current?.loadImage(reader.result);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function onReplaceImage(files: FileList | null) {
+    const file = files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') boardRef.current?.replaceImage?.(reader.result);
     };
     reader.readAsDataURL(file);
   }
@@ -1285,49 +1569,61 @@ export default function App() {
         <aside className={`tools`}>
           {isMobile ? (
             <div style={{ width:'100%' }}>
-              <div className="mobile-tabs" style={{ display:'flex', gap:8, justifyContent:'center' }}>
-                {(['tools','brush','color','size'] as const).map(tab => (
+              <div className="mobile-icon-bar">
+                {[
+                  { key: 'tools', icon: <MoreHorizontal size={18} />, tooltip: 'Tools' },
+                  { key: 'brush', icon: <PenLine size={18} />, tooltip: 'Brush & shapes' },
+                  { key: 'color', icon: <Palette size={18} />, tooltip: 'Colors' },
+                  { key: 'size', icon: <SlidersHorizontal size={18} />, tooltip: 'Stroke & options' },
+                ].map(({ key, icon, tooltip }) => (
                   <button
-                    key={tab}
-                    className={`btn ${activeMobilePanel===tab?'primary':''}`}
-                    onClick={() => setActiveMobilePanel(p => p===tab ? null : tab)}
-                    style={{ padding:'6px 10px' }}
+                    key={key}
+                    className={`icon-pill ${activeMobilePanel === key ? 'active' : ''}`}
+                    onClick={() => setActiveMobilePanel((p) => (p === key ? null : key as any))}
+                    data-tooltip={tooltip}
+                    aria-label={tooltip}
+                    aria-pressed={activeMobilePanel === key}
                   >
-                    {tab.toUpperCase()}
+                    {icon}
                   </button>
                 ))}
               </div>
-              {activeMobilePanel==='tools' && (
-                <div className="mobile-panel" style={{ display:'flex', gap:8, marginTop:8, flexWrap:'wrap', justifyContent:'center' }}>
-                  <button className="icon-btn" title="Undo" onClick={() => boardRef.current?.undo()}><Undo2 size={16} /></button>
-                  <button className="icon-btn" title="Redo" onClick={() => boardRef.current?.redo()}><Redo2 size={16} /></button>
-                  <button className={`icon-btn ${showHistory ? 'active' : ''}`} title="History" onClick={toggleHistory}><History size={16} /></button>
-                  <button className={`icon-btn ${showLayers ? 'active' : ''}`} title="Layers" onClick={toggleLayers}><Layers size={16} /></button>
-                  <button
-                    className={`icon-btn ${isHandMode ? 'active' : ''}`}
-                    title="Pan / Move canvas"
-                    onClick={() => setIsHandMode((v) => !v)}
-                  >
-                    <Hand size={16} />
-                  </button>
-                  <button
-                    className={`icon-btn ${showGrid ? 'active' : ''}`}
-                    title={showGrid ? 'Hide grid' : 'Show grid'}
-                    onClick={() => setShowGrid((v) => !v)}
-                  >
-                    <GridIcon size={16} />
-                  </button>
-                  <button className="icon-btn" title="Save" onClick={() => boardRef.current?.saveBoard?.()}><Save size={16} /></button>
-                  <button className="icon-btn" title="Download selection" onClick={onDownloadSelection}><Crop size={16} /></button>
-                  <button className="icon-btn" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
-                  <label className="icon-btn" title="Add Image">
-                    <ImageIcon size={16} />
-                    <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onPickImage(e.target.files)} />
-                  </label>
-                  <button className="icon-btn" title="Clear Canvas" onClick={() => boardRef.current?.clear()}><Trash2 size={16} /></button>
+
+              {activeMobilePanel === 'tools' && (
+                <div className="mobile-panel" style={{ marginTop:8 }}>
+                  <div className="mobile-icon-grid">
+                    <button className="icon-btn" data-tooltip="Undo" title="Undo" onClick={() => boardRef.current?.undo()}><Undo2 size={16} /></button>
+                    <button className="icon-btn" data-tooltip="Redo" title="Redo" onClick={() => boardRef.current?.redo()}><Redo2 size={16} /></button>
+                    <button className={`icon-btn ${showHistory ? 'active' : ''}`} data-tooltip="History" title="History" onClick={toggleHistory}><History size={16} /></button>
+                    <button className={`icon-btn ${showLayers ? 'active' : ''}`} data-tooltip="Layers" title="Layers" onClick={toggleLayers}><Layers size={16} /></button>
+                    <button
+                      className={`icon-btn ${isHandMode ? 'active' : ''}`}
+                      data-tooltip="Pan / Move canvas"
+                      title="Pan / Move canvas"
+                      onClick={() => setIsHandMode((v) => !v)}
+                    >
+                      <Hand size={16} />
+                    </button>
+                    <button
+                      className={`icon-btn ${showGrid ? 'active' : ''}`}
+                      data-tooltip={showGrid ? 'Hide grid' : 'Show grid'}
+                      title={showGrid ? 'Hide grid' : 'Show grid'}
+                      onClick={() => setShowGrid((v) => !v)}
+                    >
+                      <GridIcon size={16} />
+                    </button>
+                    <button className="icon-btn" data-tooltip="Save" title="Save" onClick={() => boardRef.current?.saveBoard?.()}><Save size={16} /></button>
+                    <button className="icon-btn" data-tooltip="Download" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
+                    <label className="icon-btn" data-tooltip="Add Image" title="Add Image">
+                      <ImageIcon size={16} />
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onPickImage(e.target.files)} />
+                    </label>
+                    <button className="icon-btn" data-tooltip="Clear Canvas" title="Clear Canvas" onClick={() => boardRef.current?.clear()}><Trash2 size={16} /></button>
+                  </div>
                 </div>
               )}
-              {activeMobilePanel==='brush' && (
+
+              {activeMobilePanel === 'brush' && (
                 <div className="mobile-panel" style={{ marginTop:8, display:'flex', justifyContent:'center' }}>
                   <div className="segmented brush-grid mobile-brush-grid">
                     {brushOptions.map(({ key, Icon, glyph, label }) => (
@@ -1335,6 +1631,7 @@ export default function App() {
                         key={key}
                         className={`segmented-item ${brush===key?'active':''}`}
                         onClick={() => setBrush(key)}
+                        data-tooltip={label}
                         title={label}
                       >
                         {Icon ? <Icon size={16} /> : <span className="shape-glyph">{glyph}</span>}
@@ -1343,12 +1640,14 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {activeMobilePanel==='color' && (
+
+              {activeMobilePanel === 'color' && (
                 <div className="mobile-panel" style={{ marginTop:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
                   <ColorPicker value={color} onChange={setColorWithRecents} swatches={colorSwatches} inline={true} />
                 </div>
               )}
-              {activeMobilePanel==='size' && (
+
+              {activeMobilePanel === 'size' && (
                 <div className="mobile-panel" style={{ marginTop:8, display:'flex', flexDirection:'column', alignItems:'center' }}>
                   <label className="tool-label">Size <span id="size-value">{size}</span>px</label>
                   <SizeControl value={size} onChange={(n) => setSize(n)} min={1} max={64} />
@@ -1368,6 +1667,24 @@ export default function App() {
                         <input type="checkbox" checked={shapeFill} onChange={(e) => setShapeFill(e.target.checked)} />
                         Fill
                       </label>
+                      {brush === 'rect' && (
+                        <>
+                          <label className="tool-label">Corner Radius <span>{cornerRadius}px</span></label>
+                          <SizeControl value={cornerRadius} onChange={(n) => setCornerRadius(n)} min={0} max={100} />
+                        </>
+                      )}
+                      {brush === 'polygon' && (
+                        <>
+                          <label className="tool-label">Sides <span>{polygonSides}</span></label>
+                          <SizeControl value={polygonSides} onChange={(n) => setPolygonSides(n)} min={3} max={20} />
+                        </>
+                      )}
+                      {brush === 'star' && (
+                        <>
+                          <label className="tool-label">Points <span>{starPoints}</span></label>
+                          <SizeControl value={starPoints} onChange={(n) => setStarPoints(n)} min={3} max={20} />
+                        </>
+                      )}
                     </div>
                   )}
                   {(brush === 'text' || selectedTextField) && (
@@ -1406,6 +1723,113 @@ export default function App() {
                               className="size-slider"
                             />
                           </div>
+                          {selectedTextField && (
+                            <div style={{ marginTop: 12 }}>
+                              <div className="tool-panel-title" style={{ marginTop: 0 }}>Text Formatting</div>
+                              <div className="text-size-control">
+                                <div className="text-size-meta">
+                                  <span>Font Size</span>
+                                  <span>{selectedTextField.fontSize}px</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min={8}
+                                  max={120}
+                                  value={selectedTextField.fontSize}
+                                  onChange={(e) => boardRef.current?.updateTextFieldFormatting?.({ fontSize: Number(e.target.value) })}
+                                  className="size-slider"
+                                />
+                              </div>
+                              <div style={{ marginTop: 10 }}>
+                                <label className="tool-label">Font Family</label>
+                                <select
+                                  className="tool-select"
+                                  value={selectedTextField.fontFamily || 'sans-serif'}
+                                  onChange={(e) => boardRef.current?.updateTextFieldFormatting?.({ fontFamily: e.target.value })}
+                                  style={{ width: '100%', padding: '6px', fontSize: '14px' }}
+                                >
+                                  <option value="sans-serif">Sans-serif</option>
+                                  <option value="serif">Serif</option>
+                                  <option value="monospace">Monospace</option>
+                                  <option value="Arial">Arial</option>
+                                  <option value="Helvetica">Helvetica</option>
+                                  <option value="Times New Roman">Times New Roman</option>
+                                  <option value="Courier New">Courier New</option>
+                                  <option value="Georgia">Georgia</option>
+                                  <option value="Verdana">Verdana</option>
+                                </select>
+                              </div>
+                              <div style={{ marginTop: 10 }}>
+                                <label className="tool-label">Font Weight</label>
+                                <div className="segmented" role="group">
+                                  <button
+                                    className={`segmented-item ${(selectedTextField.fontWeight || 'normal') === 'normal' ? 'active' : ''}`}
+                                    onClick={() => boardRef.current?.updateTextFieldFormatting?.({ fontWeight: 'normal' })}
+                                  >
+                                    Normal
+                                  </button>
+                                  <button
+                                    className={`segmented-item ${(selectedTextField.fontWeight || 'normal') === 'bold' ? 'active' : ''}`}
+                                    onClick={() => boardRef.current?.updateTextFieldFormatting?.({ fontWeight: 'bold' })}
+                                  >
+                                    Bold
+                                  </button>
+                                </div>
+                              </div>
+                              <div style={{ marginTop: 10 }}>
+                                <label className="tool-label">Font Style</label>
+                                <div className="segmented" role="group">
+                                  <button
+                                    className={`segmented-item ${(selectedTextField.fontStyle || 'normal') === 'normal' ? 'active' : ''}`}
+                                    onClick={() => boardRef.current?.updateTextFieldFormatting?.({ fontStyle: 'normal' })}
+                                  >
+                                    Normal
+                                  </button>
+                                  <button
+                                    className={`segmented-item ${(selectedTextField.fontStyle || 'normal') === 'italic' ? 'active' : ''}`}
+                                    onClick={() => boardRef.current?.updateTextFieldFormatting?.({ fontStyle: 'italic' })}
+                                  >
+                                    Italic
+                                  </button>
+                                </div>
+                              </div>
+                              <div style={{ marginTop: 10 }}>
+                                <label className="tool-label">Text Alignment</label>
+                                <div className="segmented" role="group">
+                                  <button
+                                    className={`segmented-item ${(selectedTextField.textAlign || 'left') === 'left' ? 'active' : ''}`}
+                                    onClick={() => boardRef.current?.updateTextFieldFormatting?.({ textAlign: 'left' })}
+                                    title="Align Left"
+                                  >
+                                    <AlignLeft size={14} />
+                                  </button>
+                                  <button
+                                    className={`segmented-item ${(selectedTextField.textAlign || 'left') === 'center' ? 'active' : ''}`}
+                                    onClick={() => boardRef.current?.updateTextFieldFormatting?.({ textAlign: 'center' })}
+                                    title="Align Center"
+                                  >
+                                    <AlignCenter size={14} />
+                                  </button>
+                                  <button
+                                    className={`segmented-item ${(selectedTextField.textAlign || 'left') === 'right' ? 'active' : ''}`}
+                                    onClick={() => boardRef.current?.updateTextFieldFormatting?.({ textAlign: 'right' })}
+                                    title="Align Right"
+                                  >
+                                    <AlignRight size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                              <div style={{ marginTop: 10 }}>
+                                <label className="tool-label">Text Color</label>
+                                <ColorPicker
+                                  value={selectedTextField.textColor || selectedTextField.color}
+                                  onChange={(newColor) => boardRef.current?.updateTextFieldFormatting?.({ textColor: newColor })}
+                                  swatches={colorSwatches}
+                                  inline={true}
+                                />
+                              </div>
+                            </div>
+                          )}
                         </>
                       ) : (
                         <p className="tool-hint" style={{ textAlign:'center' }}>Select a text field to adjust its width and height.</p>
@@ -1528,11 +1952,14 @@ export default function App() {
                           { key: 'triangle', label: 'Triangle', Icon: TriangleIcon },
                           { key: 'diamond', label: 'Diamond', Icon: DiamondIcon },
                           { key: 'hexagon', label: 'Hexagon', Icon: HexagonIcon },
+                          { key: 'polygon', label: 'Polygon', Icon: Shapes },
+                          { key: 'star', label: 'Star', Icon: Sparkles },
                         ] as Array<{ key: BrushKind; label: string; Icon: React.ComponentType<{ size?: number }> }>).map(({ key, label, Icon }) => (
                           <button
                             key={key}
                             className={`tool-panel-item icon-only ${brush === key && !isHandMode ? 'active' : ''}`}
                             onClick={() => selectBrushTool(key)}
+                            data-tooltip={label}
                             title={label}
                           >
                             <span className="tool-panel-item-icon"><Icon size={14} /></span>
@@ -1572,6 +1999,24 @@ export default function App() {
                             <input type="checkbox" checked={shapeFill} onChange={(e) => setShapeFill(e.target.checked)} />
                             Fill
                           </label>
+                          {brush === 'rect' && (
+                            <>
+                              <label className="tool-label">Corner Radius <span>{cornerRadius}px</span></label>
+                              <SizeControl value={cornerRadius} onChange={(n) => setCornerRadius(n)} min={0} max={100} />
+                            </>
+                          )}
+                          {brush === 'polygon' && (
+                            <>
+                              <label className="tool-label">Sides <span>{polygonSides}</span></label>
+                              <SizeControl value={polygonSides} onChange={(n) => setPolygonSides(n)} min={3} max={20} />
+                            </>
+                          )}
+                          {brush === 'star' && (
+                            <>
+                              <label className="tool-label">Points <span>{starPoints}</span></label>
+                              <SizeControl value={starPoints} onChange={(n) => setStarPoints(n)} min={3} max={20} />
+                            </>
+                          )}
                         </div>
                       )}
 
@@ -1612,6 +2057,110 @@ export default function App() {
                                   className="size-slider"
                                 />
                               </div>
+                              <div style={{ marginTop: 12 }}>
+                                <div className="tool-panel-title" style={{ marginTop: 0 }}>Text Formatting</div>
+                                <div className="text-size-control">
+                                  <div className="text-size-meta">
+                                    <span>Font Size</span>
+                                    <span>{selectedTextField.fontSize}px</span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={8}
+                                    max={120}
+                                    value={selectedTextField.fontSize}
+                                    onChange={(e) => boardRef.current?.updateTextFieldFormatting?.({ fontSize: Number(e.target.value) })}
+                                    className="size-slider"
+                                  />
+                                </div>
+                                <div style={{ marginTop: 10 }}>
+                                  <label className="tool-label">Font Family</label>
+                                  <select
+                                    className="tool-select"
+                                    value={selectedTextField.fontFamily || 'sans-serif'}
+                                    onChange={(e) => boardRef.current?.updateTextFieldFormatting?.({ fontFamily: e.target.value })}
+                                  >
+                                    <option value="sans-serif">Sans-serif</option>
+                                    <option value="serif">Serif</option>
+                                    <option value="monospace">Monospace</option>
+                                    <option value="Arial">Arial</option>
+                                    <option value="Helvetica">Helvetica</option>
+                                    <option value="Times New Roman">Times New Roman</option>
+                                    <option value="Courier New">Courier New</option>
+                                    <option value="Georgia">Georgia</option>
+                                    <option value="Verdana">Verdana</option>
+                                  </select>
+                                </div>
+                                <div style={{ marginTop: 10 }}>
+                                  <label className="tool-label">Font Weight</label>
+                                  <div className="segmented" role="group">
+                                    <button
+                                      className={`segmented-item ${(selectedTextField.fontWeight || 'normal') === 'normal' ? 'active' : ''}`}
+                                      onClick={() => boardRef.current?.updateTextFieldFormatting?.({ fontWeight: 'normal' })}
+                                    >
+                                      Normal
+                                    </button>
+                                    <button
+                                      className={`segmented-item ${(selectedTextField.fontWeight || 'normal') === 'bold' ? 'active' : ''}`}
+                                      onClick={() => boardRef.current?.updateTextFieldFormatting?.({ fontWeight: 'bold' })}
+                                    >
+                                      Bold
+                                    </button>
+                                  </div>
+                                </div>
+                                <div style={{ marginTop: 10 }}>
+                                  <label className="tool-label">Font Style</label>
+                                  <div className="segmented" role="group">
+                                    <button
+                                      className={`segmented-item ${(selectedTextField.fontStyle || 'normal') === 'normal' ? 'active' : ''}`}
+                                      onClick={() => boardRef.current?.updateTextFieldFormatting?.({ fontStyle: 'normal' })}
+                                    >
+                                      Normal
+                                    </button>
+                                    <button
+                                      className={`segmented-item ${(selectedTextField.fontStyle || 'normal') === 'italic' ? 'active' : ''}`}
+                                      onClick={() => boardRef.current?.updateTextFieldFormatting?.({ fontStyle: 'italic' })}
+                                    >
+                                      Italic
+                                    </button>
+                                  </div>
+                                </div>
+                                <div style={{ marginTop: 10 }}>
+                                  <label className="tool-label">Text Alignment</label>
+                                  <div className="segmented" role="group">
+                                    <button
+                                      className={`segmented-item ${(selectedTextField.textAlign || 'left') === 'left' ? 'active' : ''}`}
+                                      onClick={() => boardRef.current?.updateTextFieldFormatting?.({ textAlign: 'left' })}
+                                      title="Align Left"
+                                    >
+                                      <AlignLeft size={14} />
+                                    </button>
+                                    <button
+                                      className={`segmented-item ${(selectedTextField.textAlign || 'left') === 'center' ? 'active' : ''}`}
+                                      onClick={() => boardRef.current?.updateTextFieldFormatting?.({ textAlign: 'center' })}
+                                      title="Align Center"
+                                    >
+                                      <AlignCenter size={14} />
+                                    </button>
+                                    <button
+                                      className={`segmented-item ${(selectedTextField.textAlign || 'left') === 'right' ? 'active' : ''}`}
+                                      onClick={() => boardRef.current?.updateTextFieldFormatting?.({ textAlign: 'right' })}
+                                      title="Align Right"
+                                    >
+                                      <AlignRight size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                                <div style={{ marginTop: 10 }}>
+                                  <label className="tool-label">Text Color</label>
+                                  <ColorPicker
+                                    value={selectedTextField.textColor || selectedTextField.color}
+                                    onChange={(newColor) => boardRef.current?.updateTextFieldFormatting?.({ textColor: newColor })}
+                                    swatches={colorSwatches}
+                                    inline={true}
+                                  />
+                                </div>
+                              </div>
                             </>
                           ) : (
                             <p className="tool-hint" style={{ margin: 0 }}>Select a text box to resize.</p>
@@ -1648,6 +2197,9 @@ export default function App() {
             size={size}
             eraserMode={eraserMode}
             shapeFill={shapeFill}
+            cornerRadius={cornerRadius}
+            polygonSides={polygonSides}
+            starPoints={starPoints}
             onHistoryUpdate={handleHistoryUpdate}
             showGrid={showGrid}
             onTextFieldChange={handleTextFieldChange}
@@ -1656,29 +2208,113 @@ export default function App() {
           {/* Desktop: workflow actions bottom-center */}
           {!isMobile && (
             <div className="canvas-actions" role="toolbar" aria-label="Canvas actions">
-              <button className="icon-btn" title="Undo" onClick={() => boardRef.current?.undo()}><Undo2 size={16} /></button>
-              <button className="icon-btn" title="Redo" onClick={() => boardRef.current?.redo()}><Redo2 size={16} /></button>
-              <button className={`icon-btn ${showHistory ? 'active' : ''}`} onClick={toggleHistory} title="History"><History size={16} /></button>
-              <button className={`icon-btn ${showLayers ? 'active' : ''}`} onClick={toggleLayers} title="Layers"><Layers size={16} /></button>
+              <button className="icon-btn" data-tooltip="Undo" title="Undo" onClick={() => boardRef.current?.undo()}><Undo2 size={16} /></button>
+              <button className="icon-btn" data-tooltip="Redo" title="Redo" onClick={() => boardRef.current?.redo()}><Redo2 size={16} /></button>
+              <button className={`icon-btn ${showHistory ? 'active' : ''}`} data-tooltip="History" onClick={toggleHistory} title="History"><History size={16} /></button>
+              <button className={`icon-btn ${showLayers ? 'active' : ''}`} data-tooltip="Layers" onClick={toggleLayers} title="Layers"><Layers size={16} /></button>
               <button
                 className={`icon-btn ${showGrid ? 'active' : ''}`}
+                data-tooltip={showGrid ? 'Hide grid' : 'Show grid'}
                 title={showGrid ? 'Hide grid' : 'Show grid'}
                 onClick={() => setShowGrid((v) => !v)}
               >
                 <GridIcon size={16} />
               </button>
-              <button className="icon-btn" title="Download selection" onClick={onDownloadSelection}><Crop size={16} /></button>
-              <button className="icon-btn" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
-              <button className="icon-btn" title="Clear Canvas" onClick={() => boardRef.current?.clear()}><Trash2 size={16} /></button>
+              <button className="icon-btn" data-tooltip="Download" title="Download" onClick={onDownload}><DownloadIcon size={16} /></button>
+              <button className="icon-btn" data-tooltip="Clear Canvas" title="Clear Canvas" onClick={() => boardRef.current?.clear()}><Trash2 size={16} /></button>
             </div>
           )}
 
+          {/* Image controls panel */}
+          {showImageControls && imageState && (
+            <div className="image-controls-panel" role="dialog" aria-label="Image controls" style={{
+              position: 'absolute',
+              bottom: '20px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'var(--color-surface, #1a1a1a)',
+              border: '1px solid var(--color-border, #333)',
+              borderRadius: '8px',
+              padding: '12px',
+              minWidth: '200px',
+              zIndex: 1000,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <strong style={{ fontSize: '14px' }}>Image Controls</strong>
+                <button className="icon-btn small" onClick={() => { setShowImageControls(false); boardRef.current?.selectImage?.(); }} title="Close">
+                  <X size={14} />
+                </button>
+              </div>
+              
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px' }}>Opacity: {Math.round((imageState.opacity || 1) * 100)}%</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={(imageState.opacity || 1) * 100}
+                  onChange={(e) => {
+                    const opacity = Number(e.target.value) / 100;
+                    boardRef.current?.setImageOpacity?.(opacity);
+                    setImageState({ ...imageState, opacity });
+                  }}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px' }}>Rotation: {Math.round(imageState.rotation || 0)}°</label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button className="icon-btn" onClick={() => {
+                    const newRotation = (imageState.rotation || 0) - 15;
+                    boardRef.current?.setImageRotation?.(newRotation);
+                    setImageState({ ...imageState, rotation: newRotation });
+                  }} title="Rotate left">
+                    <RotateCcw size={16} />
+                  </button>
+                  <input
+                    type="range"
+                    min="-180"
+                    max="180"
+                    value={imageState.rotation || 0}
+                    onChange={(e) => {
+                      const rotation = Number(e.target.value);
+                      boardRef.current?.setImageRotation?.(rotation);
+                      setImageState({ ...imageState, rotation });
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                  <button className="icon-btn" onClick={() => {
+                    const newRotation = (imageState.rotation || 0) + 15;
+                    boardRef.current?.setImageRotation?.(newRotation);
+                    setImageState({ ...imageState, rotation: newRotation });
+                  }} title="Rotate right">
+                    <RotateCw size={16} />
+                  </button>
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                <label className="btn" style={{ flex: 1, cursor: 'pointer', textAlign: 'center', padding: '6px 12px' }}>
+                  <ImagePlus size={14} style={{ marginRight: '4px', display: 'inline' }} />
+                  Replace
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onReplaceImage(e.target.files)} />
+                </label>
+              </div>
+              
+              <p style={{ fontSize: '11px', opacity: 0.7, margin: 0 }}>
+                Use Select tool and click image to resize/rotate. Drag corners to resize, drag rotate handle to rotate.
+              </p>
+            </div>
+          )}
+          
           {/* Desktop: view controls bottom-right */}
           {!isMobile && (
             <div className="canvas-zoom" role="toolbar" aria-label="Canvas zoom">
-              <button className="icon-btn" onClick={() => boardRef.current?.setZoom(-0.1)} title="Zoom out"><ZoomOut size={16} /></button>
-              <button className="icon-btn" onClick={() => boardRef.current?.resetView()} title="Reset view"><Maximize size={16} /></button>
-              <button className="icon-btn" onClick={() => boardRef.current?.setZoom(0.1)} title="Zoom in"><ZoomIn size={16} /></button>
+              <button className="icon-btn" data-tooltip="Zoom out" onClick={() => boardRef.current?.setZoom(-0.1)} title="Zoom out"><ZoomOut size={16} /></button>
+              <button className="icon-btn" data-tooltip="Reset view" onClick={() => boardRef.current?.resetView()} title="Reset view"><Maximize size={16} /></button>
+              <button className="icon-btn" data-tooltip="Zoom in" onClick={() => boardRef.current?.setZoom(0.1)} title="Zoom in"><ZoomIn size={16} /></button>
             </div>
           )}
           {showHistory && (
@@ -1905,35 +2541,120 @@ export default function App() {
         </section>
 
         {!isMobile && (
-          <aside className="side-panel">
-            <div className={`card ${aiBorderActive ? 'beam' : ''}`} id="ai-card">
-              <div className="card-header">
-                <h2>AI Response</h2>
-                <button className="icon-btn" data-tooltip="Copy" title="Copy" onClick={() => navigator.clipboard.writeText(aiText)}>⧉</button>
+          <div
+            className="ai-float"
+            style={{
+              position: 'fixed',
+              top: aiPanelPos.y,
+              left: aiPanelPos.x,
+              width: aiPanelMaximized ? Math.max(320, (typeof window !== 'undefined' ? window.innerWidth : 0) - 24) : aiPanelSize.width,
+              height: aiPanelMinimized
+                ? 'auto'
+                : aiPanelMaximized
+                ? Math.max(320, (typeof window !== 'undefined' ? window.innerHeight : 0) - 80)
+                : aiPanelSize.height,
+              maxHeight: 'calc(100vh - 24px)',
+              zIndex: 30,
+              boxShadow: '0 12px 30px rgba(0,0,0,0.22)',
+              borderRadius: 12,
+              background: 'var(--card-bg, #0b1220)',
+              border: aiBorderActive ? '1px solid var(--accent, #5b8def)' : '1px solid rgba(255,255,255,0.08)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              minWidth: 300,
+            }}
+          >
+            <div
+              className="ai-float-header"
+              style={{
+                cursor: aiDragRef.current ? 'grabbing' : 'grab',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 12px',
+                background: 'rgba(255,255,255,0.04)',
+                userSelect: 'none',
+              }}
+              onPointerDown={startAiDrag}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Move size={14} />
+                <span>AI Response</span>
               </div>
-              <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
-                <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
-              </div>
-              <div className="ai-ask">
-                <input
-                  className="ask-input"
-                  placeholder="Ask AI (optional prompt)"
-                  value={promptText}
-                  onChange={(e) => setPromptText(e.target.value)}
-                />
+              <div style={{ display: 'flex', gap: 8 }}>
                 <button
-                  className={`btn accent ask-btn ${isAnalyzing ? 'beam' : ''} ${askClicked ? 'clicked' : ''}`}
-                  title="Ask AI"
-                  data-tooltip="Ask AI"
-                  onClick={onAnalyze}
-                  aria-label="Ask AI"
+                  className="icon-btn"
+                  title={aiPanelMinimized ? 'Restore' : 'Minimize'}
+                  onClick={toggleAiMinimize}
+                  style={{ cursor: 'pointer' }}
                 >
-                  <Send size={16} />
-                  <span>Ask AI</span>
+                  {aiPanelMinimized ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+                </button>
+                <button
+                  className="icon-btn"
+                  title={aiPanelMaximized ? 'Restore size' : 'Maximize'}
+                  onClick={toggleAiMaximize}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {aiPanelMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                 </button>
               </div>
             </div>
-          </aside>
+            {!aiPanelMinimized && (
+              <>
+                <div style={{ padding: 12, overflow: 'auto', flex: 1 }}>
+                  <div className={`card ${aiBorderActive ? 'beam' : ''}`} id="ai-card" style={{ margin: 0, height: '100%' }}>
+                    <div className="card-header">
+                      <h2>AI Response</h2>
+                      <button className="icon-btn" data-tooltip="Copy" title="Copy" onClick={() => navigator.clipboard.writeText(aiText)}>⧉</button>
+                    </div>
+                    <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ whiteSpace: 'pre-wrap', flex: 1 }}>
+                      <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
+                    </div>
+                    {/* AI features enabled */}
+                    {true && (
+                      <>
+                        <div className="ai-ask">
+                          <input
+                            className="ask-input"
+                            placeholder="Ask AI (optional prompt)"
+                            value={promptText}
+                            onChange={(e) => setPromptText(e.target.value)}
+                          />
+                          <button
+                            className={`btn accent ask-btn ${isAnalyzing ? 'beam' : ''} ${askClicked ? 'clicked' : ''}`}
+                            title="Ask AI"
+                            data-tooltip="Ask AI"
+                            onClick={onAnalyze}
+                            aria-label="Ask AI"
+                          >
+                            <Send size={16} />
+                            <span>Ask AI</span>
+                          </button>
+                        </div>
+                        {/* AI enhancements hidden per request */}
+                      </>
+                    )}
+                  </div>
+                </div>
+                {!aiPanelMaximized && (
+                  <div
+                    onPointerDown={startAiResize}
+                    style={{
+                      position: 'absolute',
+                      width: 16,
+                      height: 16,
+                      bottom: 6,
+                      right: 6,
+                      cursor: 'nwse-resize',
+                      opacity: 0.8,
+                    }}
+                  />
+                )}
+              </>
+            )}
+          </div>
         )}
         {isMobile && (
           <aside className="panel-mobile ai-mobile">
@@ -1945,22 +2666,28 @@ export default function App() {
               <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
                 <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
               </div>
-              <div className="ai-ask">
-                <input
-                  className="ask-input"
-                  placeholder="Ask AI (optional prompt)"
-                  value={promptText}
-                  onChange={(e) => setPromptText(e.target.value)}
-                />
-                <button
-                  className={`btn accent ask-btn ${isAnalyzing ? 'beam' : ''} ${askClicked ? 'clicked' : ''}`}
-                  onClick={onAnalyze}
-                  aria-label="Ask AI"
-                >
-                  <Send size={16} />
-                  <span>Ask AI</span>
-                </button>
-              </div>
+              {/* AI features enabled */}
+              {true && (
+                <>
+                  <div className="ai-ask">
+                    <input
+                      className="ask-input"
+                      placeholder="Ask AI (optional prompt)"
+                      value={promptText}
+                      onChange={(e) => setPromptText(e.target.value)}
+                    />
+                    <button
+                      className={`btn accent ask-btn ${isAnalyzing ? 'beam' : ''} ${askClicked ? 'clicked' : ''}`}
+                      onClick={onAnalyze}
+                      aria-label="Ask AI"
+                    >
+                      <Send size={16} />
+                      <span>Ask AI</span>
+                    </button>
+                  </div>
+                  {/* AI enhancements hidden per request */}
+                </>
+              )}
             </div>
           </aside>
         )}
@@ -2009,6 +2736,104 @@ export default function App() {
           const target = e.target as HTMLElement;
           if (target.classList.contains('how-overlay')) setShowHow(false);
         }} />
+      )}
+
+      {showExportMenu && (
+        <div 
+          className="about-modal" 
+          role="dialog" 
+          aria-modal="true" 
+          aria-label="Export options"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowExportMenu(false);
+            }
+          }}
+        >
+          <div className="about-header">
+            <strong>Export {exportIsSelection ? 'Selection' : 'Canvas'}</strong>
+            <button className="icon-btn" onClick={() => setShowExportMenu(false)} aria-label="Close">✕</button>
+          </div>
+          <div className="about-body">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label className="tool-label" style={{ marginBottom: '8px', display: 'block' }}>Format</label>
+                <div className="segmented" role="group" aria-label="Export format">
+                  <button 
+                    className={`segmented-item ${exportFormat === 'png' ? 'active' : ''}`} 
+                    onClick={() => setExportFormat('png')}
+                  >
+                    PNG
+                  </button>
+                  <button 
+                    className={`segmented-item ${exportFormat === 'svg' ? 'active' : ''}`} 
+                    onClick={() => setExportFormat('svg')}
+                  >
+                    SVG
+                  </button>
+                  <button 
+                    className={`segmented-item ${exportFormat === 'pdf' ? 'active' : ''}`} 
+                    onClick={() => setExportFormat('pdf')}
+                  >
+                    PDF
+                  </button>
+                </div>
+              </div>
+              
+              <div>
+                <label className="tool-label" style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={exportTransparent} 
+                    onChange={(e) => setExportTransparent(e.target.checked)}
+                    disabled={exportFormat === 'pdf'}
+                  />
+                  <span>Transparent background</span>
+                </label>
+                {exportFormat === 'pdf' && (
+                  <p className="tool-hint" style={{ marginTop: '4px', fontSize: '12px', color: '#888' }}>
+                    PDF format doesn't support transparency
+                  </p>
+                )}
+              </div>
+              
+              <div>
+                <label className="tool-label" style={{ marginBottom: '8px', display: 'block' }}>
+                  Resolution (DPI): <span id="dpi-value">{exportDpi}</span>
+                </label>
+                <input
+                  type="range"
+                  min="72"
+                  max="300"
+                  step="24"
+                  value={exportDpi}
+                  onChange={(e) => setExportDpi(Number(e.target.value))}
+                  className="size-slider"
+                  disabled={exportFormat === 'svg'}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                  <span>72 (Web)</span>
+                  <span>150 (Print)</span>
+                  <span>300 (High)</span>
+                </div>
+                {exportFormat === 'svg' && (
+                  <p className="tool-hint" style={{ marginTop: '4px', fontSize: '12px', color: '#888' }}>
+                    SVG is vector format, resolution independent
+                  </p>
+                )}
+              </div>
+              
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <button className="btn accent" onClick={handleExport}>
+                  Export
+                </button>
+                <button className="btn" onClick={() => setShowExportMenu(false)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showHow && (

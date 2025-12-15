@@ -1,4 +1,4 @@
-# Cognito
+# Cognito v1.1
 
 <p align="center">
   <strong>Cognito</strong> is a fast AI whiteboard that turns sketches into structured explanations — including clean, KaTeX-rendered math.
@@ -29,11 +29,22 @@ Cognito is a canvas-first app: **draw**, optionally **add a prompt**, and get AI
 
 ---
 
-## ✅ Key features
+## 🆕 What’s new in v1.1
+
+- **Precision canvas**: new shape set (lines, polygons, stars), fills, rounded rectangles, advanced text boxes, and brush/eraser tuning.
+- **Layout superpowers**: layers with lock/hide/reorder, grouping/ungrouping, align + distribute, flip, bring-to-front/send-to-back.
+- **Smart AI assists**: auto-arrange, shape clean-up, and AI layout suggestions alongside the original whiteboard analysis.
+- **Rich assets**: image upload with crop/resize/rotate/opacity controls; multiple images on a board.
+- **Better outputs**: export to PNG/SVG/PDF (full canvas or selection) and save/load strokes.
+- **Control & precision**: grid + rulers, zoom/pan + reset, history timeline with snapshots.
+
+---
+
+## ✅ Core features
 
 - **AI canvas analysis**: summarization + interpretation of what’s on the board
 - **Math-ready output**: KaTeX-rendered formulas and detailed steps for math questions
-- **Whiteboard tools**: draw, erase, shapes, text, zoom/pan
+- **Whiteboard tools**: freehand, shapes, text, images, zoom/pan, grid/rulers
 - **Provider switch**: choose between OpenAI and Gemini
 - **Production security basics**: CSP + helmet + input validation + request timeouts
 
@@ -179,5 +190,3 @@ On the EC2 instance, `server/scripts/load-secrets.js` can pull the secret and wr
 
 PRs and issues are welcome. If you’re integrating Cognito into another product (notebook/LMS/canvas tools), use the feedback form:
 `https://forms.gle/EunESTAMAMsato776`
-
-
