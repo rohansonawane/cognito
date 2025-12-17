@@ -52,11 +52,8 @@ import {
   ArrowDown,
   Minus,
   MoreHorizontal,
-  RotateCw,
-  RotateCcw,
   Wand2,
   Layout,
-  ImagePlus,
   X,
   Maximize2,
   Minimize2,
@@ -1470,20 +1467,6 @@ export default function App() {
   }
 
 
-  const [imageState, setImageState] = useState<{ hasImage: boolean; opacity: number; rotation: number } | null>(null);
-  const [showImageControls, setShowImageControls] = useState(false);
-
-  useEffect(() => {
-    const checkImageState = () => {
-      const state = boardRef.current?.getImageState?.();
-      setImageState(state);
-      setShowImageControls(state?.hasImage ?? false);
-    };
-    checkImageState();
-    const interval = setInterval(checkImageState, 500);
-    return () => clearInterval(interval);
-  }, []);
-
   function onPickImage(files: FileList | null) {
     const file = files?.[0];
     if (!file) return;
@@ -1491,25 +1474,26 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        if (boardRef.current?.isImageSelected?.()) {
-          boardRef.current?.replaceImage?.(reader.result);
-        } else {
-          boardRef.current?.loadImage(reader.result);
-        }
+        boardRef.current?.loadImage?.(reader.result);
       }
     };
     reader.readAsDataURL(file);
   }
 
-  function onReplaceImage(files: FileList | null) {
-    const file = files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') boardRef.current?.replaceImage?.(reader.result);
-    };
-    reader.readAsDataURL(file);
+  async function copyAiResponse() {
+    const html = renderMathOnly(aiText);
+    const plain = aiText;
+    try {
+      if (navigator.clipboard && 'write' in navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+        const blobHtml = new Blob([html], { type: 'text/html' });
+        const blobText = new Blob([plain], { type: 'text/plain' });
+        await navigator.clipboard.write([new ClipboardItem({ 'text/html': blobHtml, 'text/plain': blobText })]);
+      } else {
+        await navigator.clipboard.writeText(plain);
+      }
+    } catch {
+      try { await navigator.clipboard.writeText(plain); } catch { /* ignore */ }
+    }
   }
 
   return (
@@ -2225,90 +2209,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Image controls panel */}
-          {showImageControls && imageState && (
-            <div className="image-controls-panel" role="dialog" aria-label="Image controls" style={{
-              position: 'absolute',
-              bottom: '20px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'var(--color-surface, #1a1a1a)',
-              border: '1px solid var(--color-border, #333)',
-              borderRadius: '8px',
-              padding: '12px',
-              minWidth: '200px',
-              zIndex: 1000,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <strong style={{ fontSize: '14px' }}>Image Controls</strong>
-                <button className="icon-btn small" onClick={() => { setShowImageControls(false); boardRef.current?.selectImage?.(); }} title="Close">
-                  <X size={14} />
-                </button>
-              </div>
-              
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px' }}>Opacity: {Math.round((imageState.opacity || 1) * 100)}%</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={(imageState.opacity || 1) * 100}
-                  onChange={(e) => {
-                    const opacity = Number(e.target.value) / 100;
-                    boardRef.current?.setImageOpacity?.(opacity);
-                    setImageState({ ...imageState, opacity });
-                  }}
-                  style={{ width: '100%' }}
-                />
-              </div>
-              
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px' }}>Rotation: {Math.round(imageState.rotation || 0)}°</label>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <button className="icon-btn" onClick={() => {
-                    const newRotation = (imageState.rotation || 0) - 15;
-                    boardRef.current?.setImageRotation?.(newRotation);
-                    setImageState({ ...imageState, rotation: newRotation });
-                  }} title="Rotate left">
-                    <RotateCcw size={16} />
-                  </button>
-                  <input
-                    type="range"
-                    min="-180"
-                    max="180"
-                    value={imageState.rotation || 0}
-                    onChange={(e) => {
-                      const rotation = Number(e.target.value);
-                      boardRef.current?.setImageRotation?.(rotation);
-                      setImageState({ ...imageState, rotation });
-                    }}
-                    style={{ flex: 1 }}
-                  />
-                  <button className="icon-btn" onClick={() => {
-                    const newRotation = (imageState.rotation || 0) + 15;
-                    boardRef.current?.setImageRotation?.(newRotation);
-                    setImageState({ ...imageState, rotation: newRotation });
-                  }} title="Rotate right">
-                    <RotateCw size={16} />
-                  </button>
-                </div>
-              </div>
-              
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                <label className="btn" style={{ flex: 1, cursor: 'pointer', textAlign: 'center', padding: '6px 12px' }}>
-                  <ImagePlus size={14} style={{ marginRight: '4px', display: 'inline' }} />
-                  Replace
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onReplaceImage(e.target.files)} />
-                </label>
-              </div>
-              
-              <p style={{ fontSize: '11px', opacity: 0.7, margin: 0 }}>
-                Use Select tool and click image to resize/rotate. Drag corners to resize, drag rotate handle to rotate.
-              </p>
-            </div>
-          )}
-          
           {/* Desktop: view controls bottom-right */}
           {!isMobile && (
             <div className="canvas-zoom" role="toolbar" aria-label="Canvas zoom">
@@ -2604,13 +2504,18 @@ export default function App() {
             {!aiPanelMinimized && (
               <>
                 <div style={{ padding: 12, overflow: 'auto', flex: 1 }}>
-                  <div className={`card ${aiBorderActive ? 'beam' : ''}`} id="ai-card" style={{ margin: 0, height: '100%' }}>
-                    <div className="card-header">
-                      <h2>AI Response</h2>
-                      <button className="icon-btn" data-tooltip="Copy" title="Copy" onClick={() => navigator.clipboard.writeText(aiText)}>⧉</button>
+                    <div className={`card ${aiBorderActive ? 'beam' : ''}`} id="ai-card" style={{ margin: 0, height: '100%', display:'flex', flexDirection:'column', gap:12 }}>
+                    <div className="card-header" style={{ alignItems:'center', gap:8, justifyContent:'space-between' }}>
+                      <div className="ai-meta-row" style={{ margin:0 }}>
+                        <span className={`pill ${isAnalyzing ? 'warn' : 'success'}`}>{isAnalyzing ? 'Processing…' : 'Ready'}</span>
+                        <span className="pill neutral">Provider: {provider === 'openai' ? 'OpenAI' : provider}</span>
+                      </div>
+                      <button className="icon-btn" data-tooltip="Copy" title="Copy" onClick={copyAiResponse}>⧉</button>
                     </div>
-                    <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ whiteSpace: 'pre-wrap', flex: 1 }}>
-                      <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
+                    <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ flex: 1, minHeight:0 }}>
+                      <div className="ai-output-box">
+                        <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
+                      </div>
                     </div>
                     {/* AI features enabled */}
                     {true && (
@@ -2628,6 +2533,7 @@ export default function App() {
                             data-tooltip="Ask AI"
                             onClick={onAnalyze}
                             aria-label="Ask AI"
+                            style={{ borderRadius: 10, background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', border: '1px solid rgba(37,99,235,0.4)' }}
                           >
                             <Send size={16} />
                             <span>Ask AI</span>
@@ -2658,14 +2564,19 @@ export default function App() {
         )}
         {isMobile && (
           <aside className="panel-mobile ai-mobile">
-            <div className={`card ${aiBorderActive ? 'beam' : ''}`} id="ai-card">
-              <div className="card-header">
-                <h2>AI Response</h2>
-                <button className="icon-btn" title="Copy" onClick={() => navigator.clipboard.writeText(cleanAiText)}>⧉</button>
+            <div className={`card ${aiBorderActive ? 'beam' : ''}`} id="ai-card" style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <div className="card-header" style={{ alignItems:'center', gap:8, justifyContent:'space-between' }}>
+                <div className="ai-meta-row" style={{ margin:0 }}>
+                  <span className={`pill ${isAnalyzing ? 'warn' : 'success'}`}>{isAnalyzing ? 'Processing…' : 'Ready'}</span>
+                  <span className="pill neutral">Provider: {provider === 'openai' ? 'OpenAI' : provider}</span>
+                </div>
+                <button className="icon-btn" title="Copy" onClick={copyAiResponse}>⧉</button>
               </div>
-              <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ whiteSpace: 'pre-wrap' }}>
-                <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
-              </div>
+                    <div className={`ai-output ${isAnalyzing ? 'loading' : ''}`} style={{ flex: 1, minHeight:0 }}>
+                      <div className="ai-output-box">
+                        <div dangerouslySetInnerHTML={{ __html: renderMathOnly(aiText) }} />
+                      </div>
+                    </div>
               {/* AI features enabled */}
               {true && (
                 <>
@@ -2680,6 +2591,7 @@ export default function App() {
                       className={`btn accent ask-btn ${isAnalyzing ? 'beam' : ''} ${askClicked ? 'clicked' : ''}`}
                       onClick={onAnalyze}
                       aria-label="Ask AI"
+                      style={{ borderRadius: 10, background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', border: '1px solid rgba(37,99,235,0.4)' }}
                     >
                       <Send size={16} />
                       <span>Ask AI</span>

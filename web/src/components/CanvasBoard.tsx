@@ -1943,6 +1943,33 @@ const CanvasBoardComponent: ForwardRefRenderFunction<CanvasBoardRef, Props> = ({
       hit.style.cursor = 'move';
       return;
     }
+
+    // Active image manipulation cursors
+    if (imageManipulationRef.current) {
+      const manip = imageManipulationRef.current;
+      if (manip.isResizing && manip.resizeHandle) {
+        const cursorMap: Record<string, string> = {
+          nw: 'nwse-resize',
+          se: 'nwse-resize',
+          ne: 'nesw-resize',
+          sw: 'nesw-resize',
+          n: 'n-resize',
+          s: 's-resize',
+          e: 'e-resize',
+          w: 'w-resize',
+        };
+        hit.style.cursor = cursorMap[manip.resizeHandle] || 'move';
+        return;
+      }
+      if (manip.isRotating) {
+        hit.style.cursor = 'grabbing';
+        return;
+      }
+      if (manip.isMoving) {
+        hit.style.cursor = 'grabbing';
+        return;
+      }
+    }
     
     // Check what we're hovering over
     if (x !== undefined && y !== undefined) {
@@ -1987,6 +2014,66 @@ const CanvasBoardComponent: ForwardRefRenderFunction<CanvasBoardRef, Props> = ({
           hitRef.current!.style.cursor = 'move';
         }
         return;
+      }
+    }
+
+    // Image hover cursors for select tool
+    if (brushRef.current === 'select' && pointerWorldRef.current) {
+      const { x: wx, y: wy } = pointerWorldRef.current;
+      const z = zoomRef.current || 1;
+      const imagesArray = Array.from(imagesRef.current.entries()).reverse();
+      const handleSize = 8 / z;
+      for (const [, canvasImage] of imagesArray) {
+        const { dx, dy, dw, dh, rotation = 0 } = canvasImage.placement;
+        const centerX = dx + dw / 2;
+        const centerY = dy + dh / 2;
+        let localX = wx;
+        let localY = wy;
+        if (rotation !== 0) {
+          const rad = (-rotation * Math.PI) / 180;
+          const cos = Math.cos(rad);
+          const sin = Math.sin(rad);
+          localX = (wx - centerX) * cos - (wy - centerY) * sin + centerX;
+          localY = (wx - centerX) * sin + (wy - centerY) * cos + centerY;
+        }
+        const inside = localX >= dx && localX <= dx + dw && localY >= dy && localY <= dy + dh;
+        const rotateHandle = { x: dx + dw / 2, y: dy - 30 / z };
+        const rotDist = Math.hypot(wx - rotateHandle.x, wy - rotateHandle.y);
+        if (rotDist <= 8 / z && inside) {
+          hit.style.cursor = 'grab';
+          return;
+        }
+        const handles = [
+          { x: dx, y: dy, type: 'nw' as const },
+          { x: dx + dw, y: dy, type: 'ne' as const },
+          { x: dx + dw, y: dy + dh, type: 'se' as const },
+          { x: dx, y: dy + dh, type: 'sw' as const },
+          { x: dx + dw / 2, y: dy, type: 'n' as const },
+          { x: dx + dw, y: dy + dh / 2, type: 'e' as const },
+          { x: dx + dw / 2, y: dy + dh, type: 's' as const },
+          { x: dx, y: dy + dh / 2, type: 'w' as const },
+        ];
+        for (const hnd of handles) {
+          const dist = Math.hypot(wx - hnd.x, wy - hnd.y);
+          if (dist <= handleSize) {
+            const cursorMap: Record<string, string> = {
+              nw: 'nwse-resize',
+              se: 'nwse-resize',
+              ne: 'nesw-resize',
+              sw: 'nesw-resize',
+              n: 'n-resize',
+              s: 's-resize',
+              e: 'e-resize',
+              w: 'w-resize',
+            };
+            hit.style.cursor = cursorMap[hnd.type] || 'pointer';
+            return;
+          }
+        }
+        if (inside) {
+          hit.style.cursor = 'grab';
+          return;
+        }
       }
     }
     
@@ -2590,8 +2677,8 @@ const CanvasBoardComponent: ForwardRefRenderFunction<CanvasBoardRef, Props> = ({
         return;
       }
 
-      // Select tool: select + move strokes/shapes/text, or marquee select.
-      if (brushRef.current === 'select') {
+    // Select tool: select + move strokes/shapes/text, or marquee select.
+    if (brushRef.current === 'select') {
       cancelHold(e.pointerId);
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       const { x: wx, y: wy } = getWorldFromLocal(lx, ly);
@@ -2870,7 +2957,7 @@ const CanvasBoardComponent: ForwardRefRenderFunction<CanvasBoardRef, Props> = ({
       renderSelectionOverlay();
       return;
     }
-
+      
       // Handle text tool
       if (brushRef.current === 'text') {
         cancelHold(e.pointerId);
@@ -2976,71 +3063,71 @@ const CanvasBoardComponent: ForwardRefRenderFunction<CanvasBoardRef, Props> = ({
           return;
         }
       }
-
+      
       // Check if clicking on existing text field to drag it (when not using text tool)
       const currentBrush = brushRef.current;
       // @ts-expect-error - TypeScript incorrectly narrows type after early return, but 'text' is valid BrushKind
       if (currentBrush !== 'text') {
-        cancelHold(e.pointerId);
-        const hit = getTextFieldAtPoint(lx, ly);
-        if (hit && hit.field && !hit.handle) {
-          const field = hit.field;
-          if (isLayerLocked(field.layerId)) {
+          cancelHold(e.pointerId);
+          const hit = getTextFieldAtPoint(lx, ly);
+          if (hit && hit.field && !hit.handle) {
+            const field = hit.field;
+            if (isLayerLocked(field.layerId)) {
+              selectedTextFieldIdsRef.current = new Set([field.id]);
+              notifySelectedTextField();
+              renderAll();
+              return;
+            }
+            const z = zoomRef.current || 1;
+            const pan = panRef.current;
+            const worldX = (lx - pan.x) / z;
+            const worldY = (ly - pan.y) / z;
+            
+            // Check if clicking on delete button
+            const deleteBtnSize = 20 / z;
+            const deleteBtnX = field.x + field.width - deleteBtnSize - 2;
+            const deleteBtnY = field.y - deleteBtnSize - 2;
+            
+            if (worldX >= deleteBtnX && worldX <= deleteBtnX + deleteBtnSize &&
+                worldY >= deleteBtnY && worldY <= deleteBtnY + deleteBtnSize) {
+              // Delete the text field
+              const index = textFieldsRef.current.findIndex(f => f.id === field.id);
+              if (index !== -1) {
+                textFieldsRef.current.splice(index, 1);
+                if (editingTextFieldRef.current === field.id) {
+                  editingTextFieldRef.current = null;
+                  if (textInputRef.current) {
+                    textInputRef.current.style.display = 'none';
+                  }
+                }
+                selectedTextFieldIdsRef.current.delete(field.id);
+                notifySelectedTextField();
+                renderAll();
+                updateTextInputPosition();
+                pushHistory();
+              }
+              return;
+            }
+            
+            // Select and start dragging (only if not locked)
             selectedTextFieldIdsRef.current = new Set([field.id]);
+            if (!field.locked) {
+              draggingTextFieldRef.current = field.id;
+              textFieldDragOffsetRef.current = { x: worldX - field.x, y: worldY - field.y };
+            }
             notifySelectedTextField();
             renderAll();
             return;
           }
-          const z = zoomRef.current || 1;
-          const pan = panRef.current;
-          const worldX = (lx - pan.x) / z;
-          const worldY = (ly - pan.y) / z;
-          
-          // Check if clicking on delete button
-          const deleteBtnSize = 20 / z;
-          const deleteBtnX = field.x + field.width - deleteBtnSize - 2;
-          const deleteBtnY = field.y - deleteBtnSize - 2;
-          
-          if (worldX >= deleteBtnX && worldX <= deleteBtnX + deleteBtnSize &&
-              worldY >= deleteBtnY && worldY <= deleteBtnY + deleteBtnSize) {
-            // Delete the text field
-            const index = textFieldsRef.current.findIndex(f => f.id === field.id);
-            if (index !== -1) {
-              textFieldsRef.current.splice(index, 1);
-              if (editingTextFieldRef.current === field.id) {
-                editingTextFieldRef.current = null;
-                if (textInputRef.current) {
-                  textInputRef.current.style.display = 'none';
-                }
-              }
-              selectedTextFieldIdsRef.current.delete(field.id);
-              notifySelectedTextField();
-              renderAll();
-              updateTextInputPosition();
-              pushHistory();
-            }
-            return;
-          }
-          
-          // Select and start dragging (only if not locked)
-          selectedTextFieldIdsRef.current = new Set([field.id]);
-          if (!field.locked) {
-            draggingTextFieldRef.current = field.id;
-            textFieldDragOffsetRef.current = { x: worldX - field.x, y: worldY - field.y };
-          }
-          notifySelectedTextField();
-          renderAll();
-          return;
         }
-      }
-
+      
       // Deselect text fields when clicking on empty space with other tools
       if (selectedTextFieldIdsRef.current.size > 0) {
         selectedTextFieldIdsRef.current.clear();
         notifySelectedTextField();
         renderAll();
       }
-
+      
       // Begin drawing:
       // - mouse/pen: start immediately (no perceived delay)
       // - touch: use hold-to-draw gating to avoid interfering with page scrolling
