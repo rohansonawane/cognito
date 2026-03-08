@@ -33,6 +33,14 @@ coverage/
 .env
 .env.*
 server/.env
+!server/.env.enterprise.example
+
+# Enterprise — runtime data (do not commit)
+uploads/
+data/
+*.db
+*.db-wal
+*.db-shm
 
 # Framework/Tooling
 .netlify/

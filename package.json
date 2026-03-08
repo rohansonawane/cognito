@@ -1,13 +1,18 @@
 {
-  "name": "ai-canvas-combined",
-  "version": "1.0.0",
-  "description": "AI Canvas - Combined frontend and backend",
+  "name": "cognito-enterprise",
+  "version": "2.0.0",
+  "description": "Cognito Enterprise — AI Multi-Media Analysis Platform",
   "type": "module",
   "scripts": {
     "build": "cd web && npm install && npm run build",
     "start": "cd server && node src/index-combined.js",
+    "start:enterprise": "cd server && node src/index-enterprise.js",
     "dev:web": "cd web && npm run dev",
-    "dev:server": "cd server && npm run dev"
+    "dev:server": "cd server && npm run dev",
+    "dev:enterprise": "cd server && npm run dev:enterprise",
+    "test": "cd web && npm test && cd ../server && npm test",
+    "test:web": "cd web && npm test",
+    "test:server": "cd server && npm test"
   },
   "engines": {
     "node": ">=18.0.0"

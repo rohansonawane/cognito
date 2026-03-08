@@ -354,7 +354,11 @@ function parseAiResponse(text: string): ParsedAiSection[] {
 
 type Provider = 'openai' | 'gemini';
 
-export default function App() {
+interface AppProps {
+  onEnterpriseMode?: () => void;
+}
+
+export default function App({ onEnterpriseMode }: AppProps = {}) {
   const boardRef = useRef<CanvasBoardRef>(null);
   const TEXT_FIELD_WIDTH_MIN = 80;
   const TEXT_FIELD_WIDTH_MAX = 800;
@@ -977,6 +981,16 @@ export default function App() {
               </button>
               <a className="btn feedback" href="https://forms.gle/gzvFHB3RdxW71o9t6" target="_blank" rel="noopener noreferrer">Feedback</a>
               <span className="usage-pill">{Math.max(0, ASK_LIMIT - askUsage.count)} / {ASK_LIMIT} asks left</span>
+              {onEnterpriseMode && (
+                <button
+                  className="btn"
+                  onClick={onEnterpriseMode}
+                  title="Switch to Enterprise mode — multi-file connector, workspaces, auth"
+                  style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', color: '#fff', border: 'none', fontWeight: 600 }}
+                >
+                  ⚡ Enterprise
+                </button>
+              )}
             </div>
           )}
         </div>
