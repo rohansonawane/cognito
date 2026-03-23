@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://cognito.shuruaat.in/"><img alt="Live Demo" src="https://img.shields.io/badge/Live-Demo-0ea5e9?style=for-the-badge" /></a>
-  <a href="https://forms.gle/EunESTAMAMsato776"><img alt="Feedback" src="https://img.shields.io/badge/Feedback-Form-22c55e?style=for-the-badge" /></a>
+  <a href="https://forms.gle/HE3P6bJLYLPvk92T9"><img alt="Feedback" src="https://img.shields.io/badge/Feedback-Form-22c55e?style=for-the-badge" /></a>
 </p>
 
 <p align="center">
